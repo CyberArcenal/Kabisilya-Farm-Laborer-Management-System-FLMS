@@ -15,6 +15,7 @@ module.exports = async function exportNotificationReport(params = {}) {
       // @ts-ignore
       reportType = 'summary',
       // @ts-ignore
+      // @ts-ignore
       groupBy = 'type'
     } = params;
 
@@ -31,6 +32,9 @@ module.exports = async function exportNotificationReport(params = {}) {
     const start = new Date(startDate);
     const end = new Date(endDate);
 
+    /**
+     * @type {string | readonly any[] | Readonly<any>}
+     */
     let csvData = [];
     let filename = '';
 
@@ -89,10 +93,15 @@ module.exports = async function exportNotificationReport(params = {}) {
         id: notification.id,
         type: notification.type,
         timestamp: notification.timestamp,
+        // @ts-ignore
         context_title: notification.context?.title || '',
+        // @ts-ignore
         context_message: notification.context?.message || '',
+        // @ts-ignore
         context_workerName: notification.context?.workerName || '',
+        // @ts-ignore
         context_amount: notification.context?.amount || '',
+        // @ts-ignore
         context_status: notification.context?.status || ''
       }));
 
