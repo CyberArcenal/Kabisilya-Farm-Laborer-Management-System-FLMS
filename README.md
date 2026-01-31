@@ -1,4 +1,4 @@
-# Farm Management System (Bukid–Pitak–Worker)
+# Farm Labor Management System (FLMS)
 
 A desktop application built with **Electron** and **Vite React/TypeScript** to streamline labor and financial management in farming.  
 The system focuses on organizing workers per pitak, tracking debts, calculating payments based on luwang (piecework), and supporting manual deductions for fairness and transparency.  
