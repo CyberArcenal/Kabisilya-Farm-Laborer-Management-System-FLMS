@@ -23,7 +23,6 @@ export const useBukidData = () => {
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [kabisilyaFilter, setKabisilyaFilter] = useState<number | null>(null);
   const [sortBy, setSortBy] = useState<string>('name');
   const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC'>('ASC');
 
@@ -43,7 +42,6 @@ export const useBukidData = () => {
         sortBy,
         sortOrder,
         status: statusFilter !== 'all' ? statusFilter : undefined,
-        kabisilyaId: kabisilyaFilter || undefined
       };
 
       let response;
@@ -69,7 +67,7 @@ export const useBukidData = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [currentPage, limit, searchQuery, statusFilter, kabisilyaFilter, sortBy, sortOrder]);
+  }, [currentPage, limit, searchQuery, statusFilter, sortBy, sortOrder]);
 
   // Fetch summary and stats
   const fetchSummaryAndStats = async () => {
@@ -147,8 +145,6 @@ export const useBukidData = () => {
     fetchBukids,
     handleRefresh,
     setCurrentPage,
-    kabisilyaFilter,
-    setKabisilyaFilter,
     sortBy,
     setSortBy,
     sortOrder,

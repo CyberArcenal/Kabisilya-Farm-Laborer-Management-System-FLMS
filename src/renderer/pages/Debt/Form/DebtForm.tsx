@@ -564,22 +564,6 @@ const DebtFormPage: React.FC<DebtFormPageProps> = () => {
                             ₱{limitCheck.remainingLimit.toLocaleString()}
                           </div>
                         </div>
-                        <div className="col-span-2">
-                          <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div
-                              className={`h-2 rounded-full ${
-                                limitCheck.utilizationRate > 90 ? 'bg-red-600' :
-                                limitCheck.utilizationRate > 70 ? 'bg-yellow-600' : 'bg-green-600'
-                              }`}
-                              style={{ width: `${Math.min(limitCheck.utilizationRate, 100)}%` }}
-                            />
-                          </div>
-                          <div className="flex justify-between text-xs mt-1 text-gray-600">
-                            <span>0%</span>
-                            <span>{limitCheck.utilizationRate.toFixed(1)}%</span>
-                            <span>100%</span>
-                          </div>
-                        </div>
                       </div>
                     </div>
                   )}

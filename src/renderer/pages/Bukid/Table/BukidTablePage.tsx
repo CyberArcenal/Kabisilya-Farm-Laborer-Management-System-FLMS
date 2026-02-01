@@ -1,4 +1,4 @@
-// components/Bukid/BukidTablePage.tsx
+// components/Bukid/BukidTablePage.tsx (corrected version)
 import React, { useState } from 'react';
 import { Home, Plus, Download, AlertCircle, RefreshCw } from 'lucide-react';
 import BukidStats from './components/BukidStats';
@@ -10,7 +10,10 @@ import BukidPagination from './components/BukidPagination';
 import { useBukidData } from './hooks/useBukidData';
 import { useBukidActions } from './hooks/useBukidActions';
 import BukidFormDialog from '../Dialogs/Form';
-import BukidViewDialog from '../Dialogs/View'; // Add this import
+import BukidViewDialog from '../Dialogs/View';
+import AddNoteDialog from '../Dialogs/AddNoteDialog';
+import ViewStatsDialog from '../Dialogs/ViewStatsDialog';
+import PlaceholderDialog from '../Dialogs/PlaceholderDialog';
 import { dialogs } from '../../../utils/dialogs';
 
 const BukidTablePage: React.FC = () => {
@@ -35,8 +38,6 @@ const BukidTablePage: React.FC = () => {
         fetchBukids,
         handleRefresh,
         setCurrentPage,
-        kabisilyaFilter,
-        setKabisilyaFilter,
         sortBy,
         setSortBy,
         sortOrder,
@@ -44,21 +45,33 @@ const BukidTablePage: React.FC = () => {
     } = useBukidData();
 
     const [isFormDialogOpen, setIsFormDialogOpen] = useState(false);
-    const [isViewDialogOpen, setIsViewDialogOpen] = useState(false); // Add this state
+    const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+    const [isAddNoteDialogOpen, setIsAddNoteDialogOpen] = useState(false);
+    const [isViewStatsDialogOpen, setIsViewStatsDialogOpen] = useState(false);
+    const [isBulkUpdateDialogOpen, setIsBulkUpdateDialogOpen] = useState(false);
+    const [isBulkCreateDialogOpen, setIsBulkCreateDialogOpen] = useState(false);
+    const [isImportCSVDialogOpen, setIsImportCSVDialogOpen] = useState(false);
+
     const [selectedBukidId, setSelectedBukidId] = useState<number | null>(null);
+    const [selectedBukidName, setSelectedBukidName] = useState<string>('');
     const [dialogMode, setDialogMode] = useState<'add' | 'edit'>('add');
 
     const {
         handleDeleteBukid,
         handleUpdateStatus,
         handleBulkDelete,
-        handleExportCSV
+        handleExportCSV,
+        handleAddNote,
+        handleViewStats,
+        handleBulkUpdate,
+        handleBulkCreate,
+        handleImportCSV,
+        handleExportSingleCSV, // Renamed to avoid conflict
     } = useBukidActions(
         bukids,
         fetchBukids,
         selectedBukids,
         statusFilter,
-        kabisilyaFilter
     );
 
     // Dialog handlers
@@ -74,27 +87,84 @@ const BukidTablePage: React.FC = () => {
         setIsFormDialogOpen(true);
     };
 
-    const openViewDialog = (id: number) => { // Add this function
+    const openViewDialog = (id: number) => {
         setSelectedBukidId(id);
         setIsViewDialogOpen(true);
     };
 
-    const closeFormDialog = async () => {
+    const openAddNoteDialog = (id: number) => {
+        const bukid = bukids.find(b => b.id === id);
+        setSelectedBukidId(id);
+        setSelectedBukidName(bukid?.name || '');
+        setIsAddNoteDialogOpen(true);
+    };
 
+    const openViewStatsDialog = (id: number) => {
+        setSelectedBukidId(id);
+        setIsViewStatsDialogOpen(true);
+    };
+
+    const openBulkUpdateDialog = (id: number) => {
+        setSelectedBukidId(id);
+        setIsBulkUpdateDialogOpen(true);
+    };
+
+    const openBulkCreateDialog = (id: number) => {
+        setSelectedBukidId(id);
+        setIsBulkCreateDialogOpen(true);
+    };
+
+    const openImportCSVDialog = (id: number) => {
+        setSelectedBukidId(id);
+        setIsImportCSVDialogOpen(true);
+    };
+
+    // Removed openExportSingleDialog since it's handled directly by handleExportSingleCSV
+
+    const closeFormDialog = async () => {
         setIsFormDialogOpen(false);
         setSelectedBukidId(null);
     };
 
-    const closeViewDialog = async () => { // Add this function
+    const closeViewDialog = async () => {
         setIsViewDialogOpen(false);
         setSelectedBukidId(null);
     };
 
-    const handleFormSuccess = async (bukid: any) => {
-        // Refresh the list after successful operation
+    const closeAddNoteDialog = () => {
+        setIsAddNoteDialogOpen(false);
+        setSelectedBukidId(null);
+        setSelectedBukidName('');
+    };
 
+    const closeViewStatsDialog = () => {
+        setIsViewStatsDialogOpen(false);
+        setSelectedBukidId(null);
+    };
+
+    const closeBulkUpdateDialog = () => {
+        setIsBulkUpdateDialogOpen(false);
+        setSelectedBukidId(null);
+    };
+
+    const closeBulkCreateDialog = () => {
+        setIsBulkCreateDialogOpen(false);
+        setSelectedBukidId(null);
+    };
+
+    const closeImportCSVDialog = () => {
+        setIsImportCSVDialogOpen(false);
+        setSelectedBukidId(null);
+    };
+
+    const handleFormSuccess = async (bukid: any) => {
         await fetchBukids();
         closeFormDialog();
+    };
+
+    const handleAddNoteSuccess = async () => {
+        await fetchBukids();
+        closeAddNoteDialog();
     };
 
     // Selection handlers
@@ -319,8 +389,6 @@ const BukidTablePage: React.FC = () => {
                                 setViewMode={setViewMode}
                                 handleRefresh={handleRefresh}
                                 refreshing={refreshing}
-                                kabisilyaFilter={kabisilyaFilter}
-                                setKabisilyaFilter={setKabisilyaFilter}
                                 handleStatusFilterChange={handleStatusFilterChange}
                             />
                         </div>
@@ -381,10 +449,14 @@ const BukidTablePage: React.FC = () => {
                                             selectedBukids={selectedBukids}
                                             toggleSelectAll={toggleSelectAll}
                                             toggleSelectBukid={toggleSelectBukid}
-                                            onView={openViewDialog} // Changed to use dialog
+                                            onView={openViewDialog}
                                             onEdit={openEditDialog}
                                             onDelete={handleDeleteBukid}
                                             onUpdateStatus={handleUpdateStatus}
+                                            onAddNote={openAddNoteDialog}
+                                            onViewStats={openViewStatsDialog}
+                                            onImportCSV={openImportCSVDialog}
+                                            onExportCSV={handleExportSingleCSV}
                                             sortBy={sortBy}
                                             sortOrder={sortOrder}
                                             onSort={handleSort}
@@ -396,7 +468,7 @@ const BukidTablePage: React.FC = () => {
                                                 summary={summary}
                                                 selectedBukids={selectedBukids}
                                                 toggleSelectBukid={toggleSelectBukid}
-                                                onView={openViewDialog} // Changed to use dialog
+                                                onView={openViewDialog}
                                                 onEdit={openEditDialog}
                                                 onUpdateStatus={handleUpdateStatus}
                                                 onDelete={handleDeleteBukid}
@@ -423,7 +495,7 @@ const BukidTablePage: React.FC = () => {
                 </div>
             </div>
 
-            {/* Bukid Form Dialog */}
+            {/* Existing Dialogs */}
             {isFormDialogOpen && (
                 <BukidFormDialog
                     id={selectedBukidId || undefined}
@@ -433,12 +505,56 @@ const BukidTablePage: React.FC = () => {
                 />
             )}
 
-            {/* Bukid View Dialog */}
             {isViewDialogOpen && selectedBukidId && (
                 <BukidViewDialog
                     id={selectedBukidId}
                     onClose={closeViewDialog}
                     onEdit={openEditDialog}
+                />
+            )}
+
+            {/* New Dialogs */}
+            {isAddNoteDialogOpen && selectedBukidId && selectedBukidName && (
+                <AddNoteDialog
+                    id={selectedBukidId}
+                    bukidName={selectedBukidName}
+                    onClose={closeAddNoteDialog}
+                    onSuccess={handleAddNoteSuccess}
+                />
+            )}
+
+            {isViewStatsDialogOpen && selectedBukidId && (
+                <ViewStatsDialog
+                    id={selectedBukidId}
+                    onClose={closeViewStatsDialog}
+                    onEdit={openEditDialog}
+                />
+            )}
+
+            {isBulkUpdateDialogOpen && selectedBukidId && (
+                <PlaceholderDialog
+                    title="Bulk Update"
+                    message="The bulk update feature allows you to update multiple records at once with predefined templates."
+                    featureName="Bulk Update"
+                    onClose={closeBulkUpdateDialog}
+                />
+            )}
+
+            {isBulkCreateDialogOpen && selectedBukidId && (
+                <PlaceholderDialog
+                    title="Bulk Create"
+                    message="Create multiple records simultaneously using CSV upload or template-based entry."
+                    featureName="Bulk Create"
+                    onClose={closeBulkCreateDialog}
+                />
+            )}
+
+            {isImportCSVDialogOpen && selectedBukidId && (
+                <PlaceholderDialog
+                    title="Import CSV"
+                    message="Import data from CSV files with automatic validation and error handling."
+                    featureName="CSV Import"
+                    onClose={closeImportCSVDialog}
                 />
             )}
         </>

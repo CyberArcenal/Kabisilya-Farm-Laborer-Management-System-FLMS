@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { formatDate } from '../../../../utils/formatters';
 import type { BukidData, BukidSummaryData } from '../../../../apis/bukid';
+import BukidActionsDropdown from './BukidActionsDropdown';
 
 interface BukidTableRowProps {
   bukid: BukidData;
@@ -20,6 +21,10 @@ interface BukidTableRowProps {
   onEdit: (id: number) => void;
   onDelete: (id: number, name: string) => void;
   onUpdateStatus: (id: number, currentStatus: string) => void;
+  onAddNote: (id: number) => void;
+  onViewStats: (id: number) => void;
+  onImportCSV: (id: number) => void;
+  onExportCSV: (id: number) => void;
 }
 
 const BukidTableRow: React.FC<BukidTableRowProps> = ({
@@ -32,7 +37,11 @@ const BukidTableRow: React.FC<BukidTableRowProps> = ({
   onView,
   onEdit,
   onDelete,
-  onUpdateStatus
+  onUpdateStatus,
+  onAddNote,
+  onViewStats,
+  onImportCSV,
+  onExportCSV,
 }) => {
   const [showActionsDropdown, setShowActionsDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -102,11 +111,11 @@ const BukidTableRow: React.FC<BukidTableRowProps> = ({
   // Get dropdown position
   const getDropdownPosition = () => {
     if (!buttonRef.current) return {};
-    
+
     const rect = buttonRef.current.getBoundingClientRect();
     const dropdownHeight = 280; // Estimated height of dropdown
     const windowHeight = window.innerHeight;
-    
+
     // Check if dropdown would overflow bottom of window
     if (rect.bottom + dropdownHeight > windowHeight) {
       // Show above the button
@@ -115,7 +124,7 @@ const BukidTableRow: React.FC<BukidTableRowProps> = ({
         right: `${window.innerWidth - rect.right}px`,
       };
     }
-    
+
     // Show below the button
     return {
       top: `${rect.bottom + 5}px`,
@@ -180,7 +189,6 @@ const BukidTableRow: React.FC<BukidTableRowProps> = ({
       </div>
     </div>
   );
-
   return (
     <>
       <tr className="hover:bg-gray-50 transition-colors"
@@ -251,104 +259,10 @@ const BukidTableRow: React.FC<BukidTableRowProps> = ({
             >
               <Edit className="w-4 h-4 text-yellow-500" />
             </button>
-            
-            {/* Actions Dropdown */}
-            <div className="relative" ref={dropdownRef}>
-              <button
-                ref={buttonRef}
-                onClick={() => setShowActionsDropdown(!showActionsDropdown)}
-                className="p-1.5 rounded hover:bg-gray-100 transition-colors relative"
-                title="More Actions"
-              >
-                <MoreVertical className="w-4 h-4 text-gray-500" />
-              </button>
-              
-              {showActionsDropdown && (
-                <div 
-                  className="fixed bg-white rounded-lg shadow-xl border border-gray-200 w-56 z-50 max-h-72 overflow-y-auto"
-                  style={getDropdownPosition()}
-                >
-                  <div className="py-2">
-                    <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </div>
-                    
-                    <button
-                      onClick={() => handleActionClick(() => onView(bukid.id!))}
-                      className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
-                    >
-                      <Eye className="w-4 h-4 text-blue-500" />
-                      View Details
-                    </button>
-                    <button
-                      onClick={() => handleActionClick(() => onEdit(bukid.id!))}
-                      className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
-                    >
-                      <Edit className="w-4 h-4 text-yellow-500" />
-                      Edit
-                    </button>
-                    
-                    <div className="border-t border-gray-100 my-1"></div>
-                    
-                    <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      Future Features
-                    </div>
-                    
-                    <button
-                      onClick={() => handleActionClick(() => {/* View Workers */})}
-                      className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-400 hover:bg-gray-50 cursor-not-allowed"
-                      disabled
-                    >
-                      <Users className="w-4 h-4" />
-                      View Workers
-                    </button>
-                    <button
-                      onClick={() => handleActionClick(() => {/* Generate Report */})}
-                      className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-400 hover:bg-gray-50 cursor-not-allowed"
-                      disabled
-                    >
-                      <FileText className="w-4 h-4" />
-                      Generate Report
-                    </button>
-                    <button
-                      onClick={() => handleActionClick(() => {/* View History */})}
-                      className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-400 hover:bg-gray-50 cursor-not-allowed"
-                      disabled
-                    >
-                      <History className="w-4 h-4" />
-                      View History
-                    </button>
-                    
-                    <div className="border-t border-gray-100 my-1"></div>
-                    
-                    <button
-                      onClick={() => handleActionClick(() => onUpdateStatus(bukid.id!, bukid.status || 'active'))}
-                      className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
-                    >
-                      {bukid.status === 'active' ? (
-                        <>
-                          <XCircle className="w-4 h-4 text-red-500" />
-                          Deactivate
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle className="w-4 h-4 text-green-500" />
-                          Activate
-                        </>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => handleActionClick(() => onDelete(bukid.id!, bukid.name))}
-                      className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-red-600 hover:bg-red-50"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-            
+
+
+            <BukidActionsDropdown bukid={bukid} onAddNote={onAddNote} onView={onView} onEdit={onEdit} onDelete={onDelete} onUpdateStatus={onUpdateStatus} onViewStats={onViewStats}  onImportCSV={onImportCSV} onExportCSV={onExportCSV} />
+
             <button
               onClick={onToggleExpand}
               className="p-1.5 rounded hover:bg-gray-100 transition-colors"

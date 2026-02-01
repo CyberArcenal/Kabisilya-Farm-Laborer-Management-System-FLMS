@@ -13,7 +13,6 @@ interface PitakTableViewProps {
   onDelete: (id: number, location?: string) => void;
   onAssign: (id: number, pitakData: any) => void;
   onUpdateLuWang: (id: number, totalLuwang: number) => void;
-  onViewAssignments: (id: number) => void;
   onViewAssignedWorkers: (id: number) => void;
   onViewReport: (id: number) => void;
   onMarkAsHarvested: (id: number) => void;
@@ -21,7 +20,6 @@ interface PitakTableViewProps {
   // New props for assignment viewing
   onViewAssignment: (assignmentId: number) => void;
   onViewPitakAssignments: (pitakId: number) => void;
-  onViewAssignmentHistory: (assignmentId: number) => void;
 }
 
 const PitakTableView: React.FC<PitakTableViewProps> = ({
@@ -34,7 +32,6 @@ const PitakTableView: React.FC<PitakTableViewProps> = ({
   onDelete,
   onAssign,
   onUpdateLuWang,
-  onViewAssignments,
   onViewAssignedWorkers,
   onViewReport,
   onMarkAsHarvested,
@@ -42,7 +39,6 @@ const PitakTableView: React.FC<PitakTableViewProps> = ({
   // New props
   onViewAssignment,
   onViewPitakAssignments,
-  onViewAssignmentHistory
 }) => {
   const [expandedPitak, setExpandedPitak] = useState<number | null>(null);
   const [sortBy, setSortBy] = useState<string>('createdAt');
@@ -150,7 +146,6 @@ const PitakTableView: React.FC<PitakTableViewProps> = ({
                     onDelete={handleOnDelete}
                     onAssign={handleOnAssign}
                     onUpdateLuWang={handleOnUpdateLuWang}
-                    onViewAssignments={onViewAssignments}
                     onViewAssignedWorkers={onViewAssignedWorkers}
                     onViewReport={onViewReport}
                     onMarkAsHarvested={onMarkAsHarvested}
@@ -158,12 +153,7 @@ const PitakTableView: React.FC<PitakTableViewProps> = ({
                     // Pass new props
                     onViewAssignment={onViewAssignment}
                     onViewPitakAssignments={onViewPitakAssignments}
-                    onViewAssignmentHistory={() => {
-                      if (pitak.assignments && pitak.assignments.length > 0){
-                        // onViewAssignmentHistory(pitak.assignments?.map(a => a.id))
-                        //TODO: View history for all assignments?
-                      }
-                      }}
+                 
                   />
                 ))}
               </tbody>

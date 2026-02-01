@@ -18,16 +18,10 @@ import {
     LineChart,
     Gauge
 } from 'lucide-react';
-import dashboardAPI, {
-    type PitakProductivityOverviewData,
-    type PitakProductivityDetailsData,
-    type PitakProductionTimelineData,
-    type PitakWorkerProductivityData,
-    type PitakEfficiencyAnalysisData,
-    type ComparePitaksProductivityData
-} from '../../../apis/dashboard';
+
 import { formatCurrency, formatNumber, formatPercentage } from '../../../utils/formatters';
 import { hideLoading, showLoading } from '../../../utils/notification';
+import { pitakAPI, type ComparePitaksProductivityData, type PitakEfficiencyAnalysisData, type PitakProductionTimelineData, type PitakProductivityDetailsData, type PitakProductivityOverviewData, type PitakWorkerProductivityData } from '../../../apis/analytics/pitak';
 
 const PitakProductivityPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
@@ -49,7 +43,7 @@ const PitakProductivityPage: React.FC = () => {
 
     const fetchOverviewData = async () => {
         try {
-            const response = await dashboardAPI.getPitakProductivityOverview({ timeRange });
+            const response = await pitakAPI.getPitakProductivityOverview({ timeRange });
             if (response.status) setOverviewData(response.data);
         } catch (err) {
             console.error('Failed to fetch pitak overview:', err);
@@ -61,10 +55,10 @@ const PitakProductivityPage: React.FC = () => {
 
         try {
             const [detailsRes, timelineRes, workerRes, efficiencyRes] = await Promise.all([
-                dashboardAPI.getPitakProductivityDetails({ pitakId: selectedPitak, timeRange }),
-                dashboardAPI.getPitakProductionTimeline({ pitakId: selectedPitak, timeRange }),
-                dashboardAPI.getPitakWorkerProductivity({ pitakId: selectedPitak, timeRange }),
-                dashboardAPI.getPitakEfficiencyAnalysis({ pitakId: selectedPitak, timeRange })
+                pitakAPI.getPitakProductivityDetails({ pitakId: selectedPitak, timeRange }),
+                pitakAPI.getPitakProductionTimeline({ pitakId: selectedPitak, timeRange }),
+                pitakAPI.getPitakWorkerProductivity({ pitakId: selectedPitak, timeRange }),
+                pitakAPI.getPitakEfficiencyAnalysis({ pitakId: selectedPitak, timeRange })
             ]);
 
             if (detailsRes.status) setDetailsData(detailsRes.data);
@@ -78,7 +72,7 @@ const PitakProductivityPage: React.FC = () => {
 
     const fetchComparisonData = async () => {
         try {
-            const response = await dashboardAPI.comparePitaksProductivity({
+            const response = await pitakAPI.comparePitaksProductivity({
                 timeRange,
                 scoreFilter: productivityScoreFilter !== 'all' ? productivityScoreFilter : undefined
             });

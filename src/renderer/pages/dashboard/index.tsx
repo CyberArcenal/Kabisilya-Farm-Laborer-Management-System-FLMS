@@ -22,13 +22,17 @@ import {
     Droplets,
     Wind
 } from 'lucide-react';
-import dashboardAPI, {
-    type WorkersOverviewData,
-    type FinancialOverviewData,
-    type AssignmentOverviewData,
-    type LiveDashboardData
-} from '../../apis/dashboard';
+// import dashboardAPI, {
+//     type WorkersOverviewData,
+//     type FinancialOverviewData,
+//     type AssignmentOverviewData,
+//     type LiveDashboardData
+// } from '../../apis/dashboard';
 import { formatCurrency, formatDate, formatPercentage } from '../../utils/formatters';
+import { workerPerformanceAPI, type WorkersOverviewData } from '../../apis/analytics/workerPerformance';
+import { financialAPI, type FinancialOverviewData } from '../../apis/analytics/financial';
+import type { AssignmentOverviewData, LiveDashboardData } from '../../apis/analytics/dashboard';
+import dashboardAPI from '../../apis/analytics/dashboard';
 
 const DashboardPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
@@ -51,8 +55,8 @@ const DashboardPage: React.FC = () => {
                 assignmentsRes,
                 liveRes
             ] = await Promise.all([
-                dashboardAPI.getWorkersOverview(),
-                dashboardAPI.getFinancialOverview(),
+                workerPerformanceAPI.getWorkersOverview(),
+                financialAPI.getFinancialOverview(),
                 dashboardAPI.getAssignmentOverview(),
                 dashboardAPI.getLiveDashboard()
             ]);
@@ -86,6 +90,18 @@ const DashboardPage: React.FC = () => {
     useEffect(() => {
         fetchDashboardData();
     }, []);
+
+    // Helper function to format percentage values
+    const formatPercentageValue = (value: number | undefined): string => {
+        if (value === undefined || value === null) return '0%';
+        return `${Math.round(value * 100) / 100}%`;
+    };
+
+    // Helper function to format decimal values to 1 decimal place
+    const formatDecimal = (value: number | undefined): string => {
+        if (value === undefined || value === null) return '0.0';
+        return value.toFixed(1);
+    };
 
     // Quick actions for the dashboard
     const quickActions = [
@@ -200,7 +216,7 @@ const DashboardPage: React.FC = () => {
                             }}
                         >
                             <UserCheck className="w-3 h-3 inline mr-1" />
-                            {workersData?.summary.activePercentage || 0}% active
+                            {formatPercentageValue(workersData?.summary.activePercentage)}
                         </span>
                     </div>
                     <h3 className="text-3xl font-bold mb-1 windows-title" style={{ color: 'var(--text-primary)' }}
@@ -231,7 +247,7 @@ const DashboardPage: React.FC = () => {
                             }}
                         >
                             <CheckCircle className="w-3 h-3 inline mr-1" />
-                            {assignmentsData?.summary.completionRate || 0}%
+                            {formatPercentageValue(assignmentsData?.summary.completionRate)}
                         </span>
                     </div>
                     <h3 className="text-3xl font-bold mb-1 windows-title" style={{ color: 'var(--text-primary)' }}
@@ -262,7 +278,7 @@ const DashboardPage: React.FC = () => {
                             }}
                         >
                             <Percent className="w-3 h-3 inline mr-1" />
-                            {financialData?.debts.collectionRate || 0}% collected
+                            {formatPercentageValue(financialData?.debts.collectionRate)} collected
                         </span>
                     </div>
                     <h3 className="text-3xl font-bold mb-1 windows-title" style={{ color: 'var(--text-primary)' }}
@@ -488,7 +504,7 @@ const DashboardPage: React.FC = () => {
                                 <span className="text-sm windows-text" style={{ color: 'var(--text-secondary)' }}>Worker Utilization</span>
                             </div>
                             <span className="font-semibold windows-title" style={{ color: 'var(--text-primary)' }}>
-                                {((assignmentsData?.utilization.workers.utilizationRate || 0) * 100).toFixed(1)}%
+                                {formatPercentageValue((assignmentsData?.utilization.workers.utilizationRate || 0) * 100)}
                             </span>
                         </div>
                     </div>
@@ -538,7 +554,7 @@ const DashboardPage: React.FC = () => {
                                     color: financialData?.debts.collectionRate || 0 >= 70 ? 'var(--accent-green)' : 'var(--accent-red)'
                                 }}
                             >
-                                {financialData?.debts.collectionRate || 0}%
+                                {formatPercentageValue(financialData?.debts.collectionRate)}
                             </div>
                         </div>
                         <div className="p-4 rounded-lg windows-card"
@@ -548,7 +564,7 @@ const DashboardPage: React.FC = () => {
                                 <span className="text-sm windows-text" style={{ color: 'var(--text-secondary)' }}>Avg. Interest</span>
                             </div>
                             <div className="text-xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
-                                {financialData?.debts.averageInterestRate || 0}%
+                                {formatPercentageValue(financialData?.debts.averageInterestRate)}
                             </div>
                         </div>
                         <div className="p-4 rounded-lg windows-card"
@@ -646,7 +662,7 @@ const DashboardPage: React.FC = () => {
                                     color: assignmentsData?.summary.completionRate || 0 >= 80 ? 'var(--accent-green)' : 'var(--accent-yellow)'
                                 }}
                             >
-                                {assignmentsData?.summary.completionRate || 0}%
+                                {formatPercentageValue(assignmentsData?.summary.completionRate)}
                             </div>
                         </div>
                         <div className="p-4 rounded-lg windows-card"
@@ -656,7 +672,7 @@ const DashboardPage: React.FC = () => {
                                 <span className="text-sm windows-text" style={{ color: 'var(--text-secondary)' }}>Avg. Assignments</span>
                             </div>
                             <div className="text-xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
-                                {assignmentsData?.luwangMetrics.averagePerWorker.toFixed(1) || '0.0'}
+                                {formatDecimal(assignmentsData?.luwangMetrics.averagePerWorker)}
                             </div>
                         </div>
                     </div>

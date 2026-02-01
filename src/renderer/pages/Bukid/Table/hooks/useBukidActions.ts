@@ -10,7 +10,6 @@ export const useBukidActions = (
   fetchBukids: () => Promise<void>,
   selectedBukids: number[] = [],
   statusFilter: string = 'all',
-  kabisilyaFilter: number | null = null
 ) => {
   const navigate = useNavigate();
 
@@ -34,7 +33,7 @@ export const useBukidActions = (
   };
 
   const handleUpdateStatus = async (id: number, currentStatus: string) => {
-    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+    const newStatus = currentStatus;
     const action = newStatus === 'active' ? 'activate' : 'deactivate';
 
     const confirmed = await showConfirm({
@@ -102,7 +101,6 @@ export const useBukidActions = (
       showToast('Exporting to CSV...', 'info');
       const response = await bukidAPI.exportToCSV({
         status: statusFilter !== 'all' ? statusFilter : undefined,
-        kabisilyaId: kabisilyaFilter || undefined
       });
 
       if (response.status) {
@@ -114,6 +112,81 @@ export const useBukidActions = (
         document.body.removeChild(link);
 
         showSuccess(`Exported ${response.data.recordCount} records to CSV`);
+      } else {
+        throw new Error(response.message);
+      }
+    } catch (err: any) {
+      showError(err.message || 'Failed to export CSV');
+    }
+  };
+
+  // Add Note handler
+  const handleAddNote = async (id: number, note: string) => {
+    try {
+      showToast('Adding note...', 'info');
+      const response = await bukidAPI.addNote(id, note);
+      
+      if (response.status) {
+        showSuccess('Note added successfully');
+        fetchBukids();
+        return true;
+      } else {
+        throw new Error(response.message);
+      }
+    } catch (err: any) {
+      showError(err.message || 'Failed to add note');
+      return false;
+    }
+  };
+
+  // View Stats handler
+  const handleViewStats = (id: number) => {
+    // Will be handled by dialog
+    return id;
+  };
+
+  // Bulk Update handler
+  const handleBulkUpdate = async (id: number) => {
+    showToast('Bulk update feature coming soon...', 'info');
+    // Implement bulk update logic here
+    return id;
+  };
+
+  // Bulk Create handler
+  const handleBulkCreate = async (id: number) => {
+    showToast('Bulk create feature coming soon...', 'info');
+    // Implement bulk create logic here
+    return id;
+  };
+
+  // Import CSV handler
+  const handleImportCSV = async (id: number) => {
+    showToast('Import CSV feature coming soon...', 'info');
+    // Implement import CSV logic here
+    return id;
+  };
+
+  // Export Single Bukid CSV handler
+  const handleExportSingleCSV = async (id: number) => {
+    try {
+      if(!await dialogs.confirm({title: 'Export Bukid Data', message: 'Do you want to export this bukid data to a CSV file?'}))return;
+      showToast('Exporting bukid data...', 'info');
+      
+      // Call API to export single bukid
+      const response = await bukidAPI.exportToCSV({
+        id: id,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
+      });
+
+      if (response.status) {
+        const link = document.createElement('a');
+        link.href = response.data.downloadUrl;
+        link.download = response.data.filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        showSuccess(`Exported bukid data to CSV`);
       } else {
         throw new Error(response.message);
       }
@@ -139,6 +212,12 @@ export const useBukidActions = (
     handleBulkDelete,
     handleExportCSV,
     handleSort,
-    handleStatusFilterChange
+    handleStatusFilterChange,
+    handleAddNote,
+    handleViewStats,
+    handleBulkUpdate,
+    handleBulkCreate,
+    handleImportCSV,
+    handleExportSingleCSV,
   };
 };

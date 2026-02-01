@@ -1231,7 +1231,13 @@ export interface WorkerQuickViewData {
     overallStatus: string;
   };
 }
-
+export interface BukidAnalyticsParams {
+  bukidId?: string | number;
+  timeRange?: string;
+  startDate?: string;
+  endDate?: string;
+  interval?: string;
+}
 export interface DashboardPayload {
   method: string;
   params?: Record<string, any>;
@@ -1322,27 +1328,27 @@ class DashboardAPI {
   }
 
   // ==================== BUKID ANALYTICS METHODS ====================
-  async getBukidOverview(params: any = {}): Promise<DashboardResponse<BukidOverviewData>> {
+  async getBukidOverview(params: BukidAnalyticsParams = {}): Promise<DashboardResponse<BukidOverviewData>> {
     return this.callBackend("getBukidOverview", params);
   }
 
-  async getBukidDetails(params: any = {}): Promise<DashboardResponse<BukidDetailsData>> {
+  async getBukidDetails(params: BukidAnalyticsParams = {}): Promise<DashboardResponse<BukidDetailsData>> {
     return this.callBackend("getBukidDetails", params);
   }
 
-  async getBukidProductionTrend(params: any = {}): Promise<DashboardResponse<BukidProductionTrendData>> {
+  async getBukidProductionTrend(params:BukidAnalyticsParams = {}): Promise<DashboardResponse<BukidProductionTrendData>> {
     return this.callBackend("getBukidProductionTrend", params);
   }
 
-  async getBukidWorkerDistribution(params: any = {}): Promise<DashboardResponse<BukidWorkerDistributionData>> {
+  async getBukidWorkerDistribution(params: BukidAnalyticsParams = {}): Promise<DashboardResponse<BukidWorkerDistributionData>> {
     return this.callBackend("getBukidWorkerDistribution", params);
   }
 
-  async getBukidFinancialSummary(params: any = {}): Promise<DashboardResponse<BukidFinancialSummaryData>> {
+  async getBukidFinancialSummary(params: BukidAnalyticsParams = {}): Promise<DashboardResponse<BukidFinancialSummaryData>> {
     return this.callBackend("getBukidFinancialSummary", params);
   }
 
-  async compareBukids(params: any = {}): Promise<DashboardResponse<CompareBukidsData>> {
+  async compareBukids(params: BukidAnalyticsParams = {}): Promise<DashboardResponse<CompareBukidsData>> {
     return this.callBackend("compareBukids", params);
   }
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   MapPin, Plus, Download, AlertCircle, RefreshCw
 } from 'lucide-react';
@@ -15,7 +15,6 @@ import ExportDialog from './dialogs/ExportDialog';
 // Import new dialogs
 import { usePitakData } from './hooks/usePitakData';
 import { usePitakActions } from './hooks/usePitakActions';
-import type { PitakWithDetails } from '../../../apis/pitak';
 import ViewMultipleAssignmentsDialog from '../../Assignment/View/Dialogs/ViewMultipleAssignmentsDialog';
 import AssignmentHistoryDialog from '../../Assignment/View/Dialogs/CreateAssignmentHistoryDialog';
 import ViewSingleAssignmentDialog from '../../Assignment/View/Dialogs/ViewSingleAssignmentDialog';
@@ -88,7 +87,6 @@ const PitakTablePage: React.FC = () => {
     handleBulkStatusChange,
     handleBulkDelete,
     handleExport,
-    handleViewAssignments,
     handleViewReport,
     handleViewAssignedWorkers,
     handleMarkAsHarvested,
@@ -96,7 +94,6 @@ const PitakTablePage: React.FC = () => {
     // New functions
     handleViewAssignmentDialog,
     handleViewPitakAssignmentsDialog,
-    handleViewAssignmentHistoryDialog,
 
 
     isFormDialogOpen,
@@ -403,7 +400,6 @@ const PitakTablePage: React.FC = () => {
                       onAssign={handleAssignWorkerWithData}
                       onDelete={handleDeletePitakWithData}
                       onUpdateLuWang={handleUpdateLuWangWithData}
-                      onViewAssignments={handleViewAssignments}
                       onViewAssignedWorkers={handleViewAssignedWorkers}
                       onViewReport={handleViewReport}
                       onMarkAsHarvested={handleMarkAsHarvestedWithData}
@@ -411,7 +407,6 @@ const PitakTablePage: React.FC = () => {
                       // Pass new props
                       onViewAssignment={handleViewAssignmentDialog}
                       onViewPitakAssignments={handleViewPitakAssignmentsDialog}
-                      onViewAssignmentHistory={handleViewAssignmentHistoryDialog}
                     />
                   </div>
                 ) : (

@@ -3,6 +3,7 @@ import type { WorkerData } from "./worker";
 
 // Debt Management API - Similar structure to activationAPI.ts
 export interface DebtData {
+  notes: string;
   id: number;
   originalAmount: number;
   amount: number;

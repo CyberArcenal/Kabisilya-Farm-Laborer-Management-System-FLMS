@@ -4,7 +4,8 @@ import type { WorkerData } from "./worker";
 // assignmentAPI.ts - API for Assignment Management
 export interface Assignment {
   id: number;
-  luwangCount: number; // Changed from string to number
+  name:string;
+  luwangCount: string; // Changed from string to number
   assignmentDate: string;
   status: "active" | "completed" | "cancelled";
   notes?: string;

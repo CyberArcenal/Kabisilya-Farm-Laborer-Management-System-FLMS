@@ -1,16 +1,15 @@
 // BukidViewDialog.tsx (fixed)
 import React, { useState, useEffect } from 'react';
 import {
-    X, MapPin, TreePalm, Calendar, FileText, LandPlot, Ruler, Info, ClipboardList, 
+    X, MapPin, TreePalm, Calendar, FileText, LandPlot, Ruler, Info, ClipboardList,
     DollarSign, TrendingUp, Clock, CheckCircle, XCircle, Copy, Edit, Users, BarChart
 } from 'lucide-react';
-import type { 
-    BukidData, 
-    BukidSummaryData, 
+import type {
+    BukidData,
+    BukidSummaryData,
     BukidStatsData,
-    KabisilyaInfoData,
     WorkerCountData,
-    PitakCountData 
+    PitakCountData
 } from '../../../apis/bukid';
 import bukidAPI from '../../../apis/bukid';
 import { showError } from '../../../utils/notification';
@@ -33,7 +32,6 @@ interface BukidWithDetails extends BukidData {
             recentGrowth: { date: string; count: number }[];
         };
     };
-    kabisilyaInfo?: KabisilyaInfoData;
     pitakCounts?: PitakCountData[];
     workerCounts?: WorkerCountData[];
     pitaks?: Array<{
@@ -60,7 +58,7 @@ const BukidViewDialog: React.FC<BukidViewDialogProps> = ({
         const fetchBukidData = async () => {
             try {
                 setLoading(true);
-                
+
                 // Fetch basic bukid data
                 const [bukidResponse, summaryResponse, statsResponse] = await Promise.all([
                     bukidAPI.getById(id),
@@ -77,16 +75,11 @@ const BukidViewDialog: React.FC<BukidViewDialogProps> = ({
 
                     // Fetch additional data if available
                     try {
-                        const [kabisilyaInfo, pitakCounts, workerCounts, pitaksList] = await Promise.all([
-                            bukidAPI.getKabisilyaInfo(id).catch(() => null),
+                        const [pitakCounts, workerCounts, pitaksList] = await Promise.all([
                             bukidAPI.getPitakCounts(id).catch(() => null),
                             bukidAPI.getWorkerCounts(id).catch(() => null),
                             bukidAPI.getWithPitaks(id).catch(() => null)
                         ]);
-
-                        if (kabisilyaInfo?.data) {
-                            bukidData.kabisilyaInfo = kabisilyaInfo.data;
-                        }
 
                         if (pitakCounts?.data) {
                             bukidData.pitakCounts = pitakCounts.data.pitakCounts;
@@ -154,16 +147,15 @@ const BukidViewDialog: React.FC<BukidViewDialogProps> = ({
         if (!bukid) return;
 
         const details = `
-Bukid #${bukid.id}
-Name: ${bukid.name || 'N/A'}
-Location: ${bukid.location || 'N/A'}
-Kabisilya: ${bukid.kabisilyaInfo?.kabisilya?.name || 'N/A'}
-Status: ${bukid.status || 'N/A'}
-Pitak Count: ${bukid.summary?.pitakCount || 0}
-Total LuWang: ${bukid.summary?.totalLuwang || 0}
-Created: ${formatDate(bukid.createdAt)}
-Updated: ${formatDate(bukid.updatedAt)}
-        `.trim();
+            Bukid #${bukid.id}
+            Name: ${bukid.name || 'N/A'}
+            Location: ${bukid.location || 'N/A'}
+            Status: ${bukid.status || 'N/A'}
+            Pitak Count: ${bukid.summary?.pitakCount || 0}
+            Total LuWang: ${bukid.summary?.totalLuwang || 0}
+            Created: ${formatDate(bukid.createdAt)}
+            Updated: ${formatDate(bukid.updatedAt)}
+                    `.trim();
 
         navigator.clipboard.writeText(details);
         // You can add a toast notification here
@@ -314,23 +306,6 @@ Updated: ${formatDate(bukid.updatedAt)}
                                             </div>
                                         </div>
                                     </div>
-
-                                    <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-4 rounded-xl border border-amber-200">
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <div className="text-xs text-gray-600 mb-1">Kabisilya</div>
-                                                <div className="text-lg font-bold text-gray-900">
-                                                    {bukid.kabisilyaInfo?.kabisilya?.name || 'Not assigned'}
-                                                </div>
-                                                <div className="text-xs text-gray-500 mt-1">
-                                                    {bukid.kabisilyaInfo?.workerCount || 0} workers
-                                                </div>
-                                            </div>
-                                            <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
-                                                <Users className="w-5 h-5 text-amber-600" />
-                                            </div>
-                                        </div>
-                                    </div>
                                 </div>
 
                                 {/* Detailed Information */}
@@ -349,19 +324,6 @@ Updated: ${formatDate(bukid.updatedAt)}
                                                     <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
                                                         <TreePalm className="w-4 h-4 text-gray-400" />
                                                         <span className="text-sm text-gray-900">{bukid.name || 'N/A'}</span>
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs font-medium text-gray-500 mb-1">Kabisilya</label>
-                                                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                                                        <span className="text-sm text-gray-900">
-                                                            {bukid.kabisilyaInfo?.kabisilya?.name || 'Not assigned'}
-                                                        </span>
-                                                        {bukid.kabisilyaInfo?.workerCount !== undefined && (
-                                                            <div className="text-xs text-gray-500 mt-1">
-                                                                Manages {bukid.kabisilyaInfo.workerCount} workers
-                                                            </div>
-                                                        )}
                                                     </div>
                                                 </div>
                                                 <div>
@@ -513,10 +475,10 @@ Updated: ${formatDate(bukid.updatedAt)}
                                                         </td>
                                                         <td className="px-4 py-3 whitespace-nowrap">
                                                             <span className={`px-2 py-1 text-xs rounded-full font-medium ${pitak.status === 'active'
-                                                                    ? 'bg-green-100 text-green-800'
-                                                                    : pitak.status === 'inactive'
-                                                                        ? 'bg-gray-100 text-gray-800'
-                                                                        : 'bg-yellow-100 text-yellow-800'
+                                                                ? 'bg-green-100 text-green-800'
+                                                                : pitak.status === 'inactive'
+                                                                    ? 'bg-gray-100 text-gray-800'
+                                                                    : 'bg-yellow-100 text-yellow-800'
                                                                 }`}>
                                                                 {pitak.status}
                                                             </span>
@@ -615,10 +577,6 @@ Updated: ${formatDate(bukid.updatedAt)}
                                                 <span className="text-sm text-gray-600">Inactive Bukid</span>
                                                 <span className="text-lg font-bold text-gray-600">{bukid.stats.inactive}</span>
                                             </div>
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-sm text-gray-600">Kabisilya Count</span>
-                                                <span className="text-lg font-bold text-blue-600">{bukid.stats.kabisilyaCount}</span>
-                                            </div>
                                         </div>
                                     </div>
 
@@ -662,7 +620,7 @@ Updated: ${formatDate(bukid.updatedAt)}
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-sm font-medium text-gray-900">{item.count}</span>
                                                         <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
-                                                            <div 
+                                                            <div
                                                                 className="h-full bg-green-500 rounded-full"
                                                                 style={{ width: `${(item.count / (bukid.summary?.pitakCount || 1)) * 100}%` }}
                                                             ></div>

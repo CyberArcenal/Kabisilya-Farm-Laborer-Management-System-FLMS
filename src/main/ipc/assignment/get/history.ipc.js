@@ -9,6 +9,7 @@ const { AppDataSource } = require("../../../db/dataSource");
  * @param {number} userId - User ID for logging
  * @returns {Promise<Object>} Response object
  */
+// @ts-ignore
 module.exports = async (assignmentId, userId) => {
   try {
     if (!assignmentId) {
@@ -40,6 +41,7 @@ module.exports = async (assignmentId, userId) => {
     const notes = assignment.notes || '';
     
     // Split notes by newline and look for history markers
+    // @ts-ignore
     const noteLines = notes.split('\n').filter((/** @type {string} */ line) => line.trim());
     
     noteLines.forEach((/** @type {string} */ line) => {
@@ -108,15 +110,22 @@ module.exports = async (assignmentId, userId) => {
       data: {
         assignment: {
           id: assignment.id,
+          // @ts-ignore
           luwangCount: parseFloat(assignment.luwangCount).toFixed(2),
           assignmentDate: assignment.assignmentDate,
           status: assignment.status,
+          // @ts-ignore
           worker: assignment.worker ? {
+            // @ts-ignore
             id: assignment.worker.id,
+            // @ts-ignore
             name: assignment.worker.name
           } : null,
+          // @ts-ignore
           pitak: assignment.pitak ? {
+            // @ts-ignore
             id: assignment.pitak.id,
+            // @ts-ignore
             name: assignment.pitak.name
           } : null
         },

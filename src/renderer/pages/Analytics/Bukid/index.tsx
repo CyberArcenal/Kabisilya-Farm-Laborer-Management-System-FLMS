@@ -1,128 +1,298 @@
-// pages/analytics/BukidReportsPage.tsx
+// components/BukidAnalyticsPage.tsx
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
     BarChart3,
-    TrendingUp,
     PieChart,
-    Users,
+    TrendingUp,
     DollarSign,
-    MapPin, Download,
-    Calendar, ArrowUpRight,
-    ArrowDownRight,
+    Users,
+    MapPin,
+    Calendar,
+    Filter,
+    Download,
+    RefreshCw,
     ChevronRight,
-    RefreshCw, Layers,
+    TrendingDown,
     Activity,
-    GitCompareArrows,
-    GitCompare
+    Layers,
+    Wallet,
+    Award,
+    Clock,
+    AlertCircle,
+    Building,
+    Crop,
+    Coins,
+    Percent,
+    ArrowUp,
+    ArrowDown,
+    Eye,
+    Package,
+    GitCompare,
 } from 'lucide-react';
-import dashboardAPI, {
-    type BukidOverviewData,
-    type BukidProductionTrendData,
-    type BukidFinancialSummaryData,
-    type CompareBukidsData,
-    type BukidWorkerDistributionData
-} from '../../../apis/dashboard';
-import { formatCurrency, formatNumber, formatDate, formatPercentage } from '../../../utils/formatters';
-import { hideLoading, showLoading } from '../../../utils/notification';
+import { bukidAPI, type BukidAnalyticsParams, type BukidDetailsData, type BukidFinancialSummaryData, type BukidOverviewData, type BukidProductionTrendData, type BukidWorkerDistributionData, type CompareBukidsData } from '../../../apis/analytics/bukid';
+import { formatCurrency, formatDate, formatNumber, formatPercentage } from '../../../utils/formatters';
 
-const BukidReportsPage: React.FC = () => {
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState('overview');
-    const [timeRange, setTimeRange] = useState('month');
-    const [selectedBukid, setSelectedBukid] = useState<string | null>(null);
+interface BukidAnalyticsPageProps {
+    bukidId?: string | number;
+}
+
+const BukidAnalyticsPage: React.FC<BukidAnalyticsPageProps> = ({ bukidId: propBukidId }) => {
+    const navigate = useNavigate();
+    const location = useLocation();
+    const queryParams = new URLSearchParams(location.search);
+    
+    // State management
+    const [selectedBukidId, setSelectedBukidId] = useState<string | number | undefined>(
+        propBukidId || queryParams.get('bukidId') || undefined
+    );
+    const [selectedBukidIds, setSelectedBukidIds] = useState<(string | number)[]>([]);
+    const [timeRange, setTimeRange] = useState<string>('last30days');
+    const [comparisonMode, setComparisonMode] = useState<boolean>(false);
+    const [activeTab, setActiveTab] = useState<string>('overview');
     
     // Data states
     const [overviewData, setOverviewData] = useState<BukidOverviewData | null>(null);
+    const [detailsData, setDetailsData] = useState<BukidDetailsData | null>(null);
     const [productionTrendData, setProductionTrendData] = useState<BukidProductionTrendData | null>(null);
-    const [financialData, setFinancialData] = useState<BukidFinancialSummaryData | null>(null);
-    const [comparisonData, setComparisonData] = useState<CompareBukidsData | null>(null);
     const [workerDistributionData, setWorkerDistributionData] = useState<BukidWorkerDistributionData | null>(null);
+    const [financialSummaryData, setFinancialSummaryData] = useState<BukidFinancialSummaryData | null>(null);
+    const [compareData, setCompareData] = useState<CompareBukidsData | null>(null);
+    
+    const [loading, setLoading] = useState<boolean>(false);
+    const [error, setError] = useState<string | null>(null);
+    const [allBukids, setAllBukids] = useState<Array<{ id: string | number; name: string }>>([]);
 
-    const navigate = useNavigate();
+    // Fetch all bukids for dropdown
+    useEffect(() => {
+        fetchAllBukids();
+    }, []);
 
-    const fetchAllData = async () => {
+    // Fetch data when parameters change
+    useEffect(() => {
+        if (comparisonMode && selectedBukidIds.length > 0) {
+            fetchComparisonData();
+        } else if (selectedBukidId) {
+            fetchBukidData();
+        } else {
+            fetchOverviewData();
+        }
+    }, [selectedBukidId, selectedBukidIds, timeRange, comparisonMode, activeTab]);
+
+    const fetchAllBukids = async () => {
         try {
-            setLoading(true);
-            setError(null);
-
-            const [overviewRes, trendRes, financialRes, comparisonRes, workerRes] = await Promise.all([
-                dashboardAPI.getBukidOverview({ timeRange }),
-                dashboardAPI.getBukidProductionTrend({ timeRange, interval: timeRange === 'month' ? 'week' : 'day' }),
-                dashboardAPI.getBukidFinancialSummary({ timeRange }),
-                dashboardAPI.compareBukids({ timeRange }),
-                dashboardAPI.getBukidWorkerDistribution({ timeRange })
+            // This would be replaced with actual API call to get all bukids
+            // For now, we'll simulate with mock data
+            setAllBukids([
+                { id: 1, name: 'Bukid Main Farm' },
+                { id: 2, name: 'Bukid North Field' },
+                { id: 3, name: 'Bukid South Estate' },
+                { id: 4, name: 'Bukid Riverside' }
             ]);
-
-            if (overviewRes.status) setOverviewData(overviewRes.data);
-            if (trendRes.status) setProductionTrendData(trendRes.data);
-            if (financialRes.status) setFinancialData(financialRes.data);
-            if (comparisonRes.status) setComparisonData(comparisonRes.data);
-            if (workerRes.status) setWorkerDistributionData(workerRes.data);
-
-        } catch (err: any) {
-            setError(err.message);
-            console.error('Failed to fetch bukid reports:', err);
-        } finally {
-            setLoading(false);
-            hideLoading();
+        } catch (err) {
+            console.error('Failed to fetch bukids:', err);
         }
     };
 
-    useEffect(() => {
-        fetchAllData();
-    }, [timeRange]);
+    const buildParams = (): BukidAnalyticsParams => {
+        const params: BukidAnalyticsParams = {
+            timeRange,
+            interval: timeRange === 'last7days' ? 'daily' : 
+                     timeRange === 'last30days' ? 'daily' : 
+                     timeRange === 'last90days' ? 'weekly' : 'monthly'
+        };
 
-    const handleRefresh = async () => {
-        await fetchAllData();
+        if (comparisonMode && selectedBukidIds.length > 0) {
+            params.bukidIds = selectedBukidIds;
+        } else if (selectedBukidId) {
+            params.bukidId = selectedBukidId;
+        }
+
+        return params;
     };
 
-    const handleExportData = () => {
-        // Export functionality would go here
-        console.log('Exporting bukid reports data');
+    const fetchOverviewData = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const params = buildParams();
+            const response = await bukidAPI.getBukidOverview(params);
+            
+            if (response.status) {
+                setOverviewData(response.data);
+            } else {
+                throw new Error(response.message);
+            }
+        } catch (err: any) {
+            setError(err.message || 'Failed to fetch overview data');
+            console.error('Fetch overview error:', err);
+        } finally {
+            setLoading(false);
+        }
     };
 
-    const handleViewBukidDetails = (bukidId: string) => {
-        navigate(`/farms/bukid/view/${bukidId}`);
+    const fetchBukidData = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const params = buildParams();
+
+            // Fetch data based on active tab
+            switch (activeTab) {
+                case 'overview':
+                    const detailsResponse = await bukidAPI.getBukidDetails(params);
+                    if (detailsResponse.status) {
+                        setDetailsData(detailsResponse.data);
+                    }
+                    break;
+                case 'production':
+                    const productionResponse = await bukidAPI.getBukidProductionTrend(params);
+                    if (productionResponse.status) {
+                        setProductionTrendData(productionResponse.data);
+                    }
+                    break;
+                case 'workers':
+                    const workerResponse = await bukidAPI.getBukidWorkerDistribution(params);
+                    if (workerResponse.status) {
+                        setWorkerDistributionData(workerResponse.data);
+                    }
+                    break;
+                case 'financial':
+                    const financialResponse = await bukidAPI.getBukidFinancialSummary(params);
+                    if (financialResponse.status) {
+                        setFinancialSummaryData(financialResponse.data);
+                    }
+                    break;
+            }
+        } catch (err: any) {
+            setError(err.message || 'Failed to fetch bukid data');
+            console.error('Fetch bukid data error:', err);
+        } finally {
+            setLoading(false);
+        }
     };
 
-    const tabs = [
-        { id: 'overview', label: 'Overview', icon: BarChart3 },
+    const fetchComparisonData = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const params = buildParams();
+            const response = await bukidAPI.compareBukids(params);
+            
+            if (response.status) {
+                setCompareData(response.data);
+            } else {
+                throw new Error(response.message);
+            }
+        } catch (err: any) {
+            setError(err.message || 'Failed to fetch comparison data');
+            console.error('Fetch comparison error:', err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleRefresh = () => {
+        if (comparisonMode && selectedBukidIds.length > 0) {
+            fetchComparisonData();
+        } else if (selectedBukidId) {
+            fetchBukidData();
+        } else {
+            fetchOverviewData();
+        }
+    };
+
+    const handleTimeRangeChange = (range: string) => {
+        setTimeRange(range);
+    };
+
+    const handleBukidSelect = (id: string | number) => {
+        setSelectedBukidId(id);
+        setSelectedBukidIds([]);
+        setComparisonMode(false);
+    };
+
+    const handleComparisonToggle = (bukidId: string | number) => {
+        if (selectedBukidIds.includes(bukidId)) {
+            setSelectedBukidIds(selectedBukidIds.filter(id => id !== bukidId));
+        } else {
+            setSelectedBukidIds([...selectedBukidIds, bukidId]);
+        }
+    };
+
+    const toggleComparisonMode = () => {
+        if (!comparisonMode) {
+            if (selectedBukidId) {
+                setSelectedBukidIds([selectedBukidId]);
+            }
+        }
+        setComparisonMode(!comparisonMode);
+        setActiveTab('overview');
+    };
+
+    const navigateToBukid = (id: string | number) => {
+        navigate(`/bukids/view/${id}`);
+    };
+
+    const navigateToAssignment = (assignmentId: string) => {
+        navigate(`/assignments/view/${assignmentId}`);
+    };
+
+    const navigateToWorker = (workerId: string) => {
+        navigate(`/workers/view/${workerId}`);
+    };
+
+    const navigateToPayment = (paymentId: string) => {
+        navigate(`/payments/view/${paymentId}`);
+    };
+
+    // Time range options
+    const timeRangeOptions = [
+        { value: 'last7days', label: 'Last 7 Days' },
+        { value: 'last30days', label: 'Last 30 Days' },
+        { value: 'last90days', label: 'Last 90 Days' },
+        { value: 'thisYear', label: 'This Year' },
+        { value: 'lastYear', label: 'Last Year' },
+        { value: 'allTime', label: 'All Time' }
+    ];
+
+    // Tabs for single bukid view
+    const singleBukidTabs = [
+        { id: 'overview', label: 'Overview', icon: Activity },
         { id: 'production', label: 'Production', icon: TrendingUp },
-        { id: 'financial', label: 'Financial', icon: DollarSign },
         { id: 'workers', label: 'Workers', icon: Users },
-        { id: 'comparison', label: 'Comparison', icon: GitCompareArrows }
+        { id: 'financial', label: 'Financial', icon: DollarSign }
     ];
 
-    const timeRanges = [
-        { value: 'week', label: 'This Week' },
-        { value: 'month', label: 'This Month' },
-        { value: 'quarter', label: 'This Quarter' },
-        { value: 'year', label: 'This Year' }
-    ];
-
+    // Render loading state
     if (loading) {
-        showLoading('Loading bukid reports data...');
+        return (
+            <div className="flex items-center justify-center h-96">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-3" 
+                         style={{ borderColor: 'var(--primary-color)' }}></div>
+                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                        Loading bukid analytics...
+                    </p>
+                </div>
+            </div>
+        );
     }
 
+    // Render error state
     if (error) {
         return (
             <div className="text-center p-8">
-                <div className="w-12 h-12 mx-auto mb-3 rounded-full flex items-center justify-center" style={{ background: 'var(--danger-light)', color: 'var(--danger-color)' }}>
-                    <Activity className="w-6 h-6" />
-                </div>
-                <p className="text-base font-semibold mb-1" style={{ color: 'var(--danger-color)' }}>Error Loading Reports</p>
+                <AlertCircle className="w-12 h-12 mx-auto mb-3" style={{ color: 'var(--danger-color)' }} />
+                <p className="text-base font-semibold mb-1" style={{ color: 'var(--danger-color)' }}>
+                    Error Loading Analytics
+                </p>
                 <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>{error}</p>
                 <button
-                    onClick={fetchAllData}
-                    className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:scale-105 hover:shadow-md flex items-center mx-auto"
-                    style={{
-                        background: 'var(--primary-color)',
-                        color: 'var(--sidebar-text)'
-                    }}
+                    onClick={handleRefresh}
+                    className="windows-btn windows-btn-primary px-4 py-2 text-sm font-medium"
                 >
-                    <RefreshCw className="w-4 h-4 mr-2" />
+                    <RefreshCw className="w-4 h-4 inline mr-1" />
                     Retry
                 </button>
             </div>
@@ -132,694 +302,921 @@ const BukidReportsPage: React.FC = () => {
     return (
         <div className="space-y-6 p-6">
             {/* Header */}
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                 <div>
-                    <h1 className="text-2xl font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                        <BarChart3 className="w-6 h-6" />
-                        Bukid Analytics & Reports
+                    <h1 className="text-2xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
+                        {comparisonMode ? 'Compare Bukids' : 'Bukid Analytics'}
                     </h1>
-                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        Comprehensive analysis of all bukid performance metrics
+                    <p className="text-sm windows-text" style={{ color: 'var(--text-secondary)' }}>
+                        {comparisonMode 
+                            ? `Comparing ${selectedBukidIds.length} bukid${selectedBukidIds.length > 1 ? 's' : ''}`
+                            : selectedBukidId 
+                                ? `Analytics for ${detailsData?.bukidInfo.name || 'selected bukid'}`
+                                : 'Overall bukid analytics overview'}
                     </p>
                 </div>
-                <div className="flex items-center gap-3">
-                    <select
-                        value={timeRange}
-                        onChange={(e) => setTimeRange(e.target.value)}
-                        className="px-3 py-2 rounded-lg text-sm transition-colors duration-300"
-                        style={{
-                            background: 'var(--card-bg)',
-                            color: 'var(--text-primary)',
-                            border: '1px solid var(--border-color)'
-                        }}
+                
+                <div className="flex flex-wrap gap-3">
+                    {/* Time Range Selector */}
+                    <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+                        <select
+                            value={timeRange}
+                            onChange={(e) => handleTimeRangeChange(e.target.value)}
+                            className="windows-select text-sm"
+                        >
+                            {timeRangeOptions.map(option => (
+                                <option key={option.value} value={option.value}>
+                                    {option.label}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Bukid Selector */}
+                    <div className="flex items-center gap-2">
+                        <Building className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+                        <select
+                            value={selectedBukidId || ''}
+                            onChange={(e) => handleBukidSelect(e.target.value)}
+                            className="windows-select text-sm"
+                            disabled={comparisonMode}
+                        >
+                            <option value="">All Bukids</option>
+                            {allBukids.map(bukid => (
+                                <option key={bukid.id} value={bukid.id}>
+                                    {bukid.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Comparison Mode Toggle */}
+                    <button
+                        onClick={toggleComparisonMode}
+                        className={`windows-btn flex items-center gap-2 ${comparisonMode ? 'windows-btn-primary' : 'windows-btn-secondary'}`}
                     >
-                        {timeRanges.map((range) => (
-                            <option key={range.value} value={range.value}>
-                                {range.label}
-                            </option>
-                        ))}
-                    </select>
+                        <GitCompare className="w-4 h-4" />
+                        {comparisonMode ? 'Exit Comparison' : 'Compare Bukids'}
+                    </button>
+
+                    {/* Refresh Button */}
                     <button
                         onClick={handleRefresh}
-                        className="p-2 rounded-lg transition-all duration-200 hover:shadow-md"
-                        style={{
-                            background: 'var(--card-bg)',
-                            color: 'var(--text-secondary)',
-                            border: '1px solid var(--border-color)'
-                        }}
-                        title="Refresh data"
+                        className="windows-btn windows-btn-secondary flex items-center gap-2"
                     >
                         <RefreshCw className="w-4 h-4" />
-                    </button>
-                    <button
-                        onClick={handleExportData}
-                        className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:shadow-md flex items-center"
-                        style={{
-                            background: 'var(--accent-green)',
-                            color: 'white'
-                        }}
-                    >
-                        <Download className="w-4 h-4 mr-2" />
-                        Export Report
+                        Refresh
                     </button>
                 </div>
             </div>
 
-            {/* Tabs */}
-            <div className="flex border-b" style={{ borderColor: 'var(--border-color)' }}>
-                {tabs.map((tab) => {
-                    const Icon = tab.icon;
-                    const isActive = activeTab === tab.id;
-                    return (
-                        <button
-                            key={tab.id}
-                            onClick={() => setActiveTab(tab.id)}
-                            className={`px-4 py-3 text-sm font-medium flex items-center gap-2 transition-colors duration-200 ${isActive ? '' : 'hover:opacity-80'}`}
-                            style={{
-                                borderBottom: `2px solid ${isActive ? 'var(--primary-color)' : 'transparent'}`,
-                                color: isActive ? 'var(--primary-color)' : 'var(--text-secondary)'
-                            }}
-                        >
-                            <Icon className="w-4 h-4" />
-                            {tab.label}
-                        </button>
-                    );
-                })}
-            </div>
-
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="p-5 rounded-xl transition-all duration-300 hover:shadow-lg"
-                    style={{
-                        background: 'var(--card-bg)',
-                        border: '1px solid var(--border-color)'
-                    }}
-                >
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="p-2 rounded-lg" style={{ background: 'var(--accent-green-light)' }}>
-                            <Layers className="w-5 h-5" style={{ color: 'var(--accent-green)' }} />
-                        </div>
-                        <div>
-                            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Total Bukids</p>
-                            <h3 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                                {overviewData?.summary.totalBukids || 0}
-                            </h3>
-                        </div>
-                    </div>
-                    <div className="flex justify-between items-center">
-                        <span className="text-xs px-2 py-1 rounded-full"
-                            style={{
-                                background: 'var(--accent-green-light)',
-                                color: 'var(--accent-green)'
-                            }}
-                        >
-                            {overviewData?.summary.activeBukids || 0} active
-                        </span>
-                        <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                            {overviewData?.summary.inactiveBukids || 0} inactive
-                        </span>
-                    </div>
-                </div>
-
-                <div className="p-5 rounded-xl transition-all duration-300 hover:shadow-lg"
-                    style={{
-                        background: 'var(--card-bg)',
-                        border: '1px solid var(--border-color)'
-                    }}
-                >
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="p-2 rounded-lg" style={{ background: 'var(--accent-sky-light)' }}>
-                            <MapPin className="w-5 h-5" style={{ color: 'var(--accent-sky)' }} />
-                        </div>
-                        <div>
-                            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Total Pitaks</p>
-                            <h3 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                                {overviewData?.distribution.reduce((sum, item) => sum + item.pitakCount, 0) || 0}
-                            </h3>
-                        </div>
-                    </div>
-                    <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                        Across {overviewData?.distribution.length || 0} bukids
-                    </div>
-                </div>
-
-                <div className="p-5 rounded-xl transition-all duration-300 hover:shadow-lg"
-                    style={{
-                        background: 'var(--card-bg)',
-                        border: '1px solid var(--border-color)'
-                    }}
-                >
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="p-2 rounded-lg" style={{ background: 'var(--accent-gold-light)' }}>
-                            <TrendingUp className="w-5 h-5" style={{ color: 'var(--accent-gold)' }} />
-                        </div>
-                        <div>
-                            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Total Luwang</p>
-                            <h3 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                                {formatNumber(overviewData?.production.reduce((sum, item) => sum + item.totalLuwang, 0) || 0)}
-                            </h3>
-                        </div>
-                    </div>
-                    <div className="flex items-center text-xs"
-                        style={{ color: productionTrendData?.summary.totalLuwang! > 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}
-                    >
-                        {productionTrendData?.summary.totalLuwang! > 0 ? (
-                            <ArrowUpRight className="w-3 h-3 mr-1" />
-                        ) : (
-                            <ArrowDownRight className="w-3 h-3 mr-1" />
-                        )}
-                        {formatNumber(productionTrendData?.summary.totalLuwang || 0)} this period
-                    </div>
-                </div>
-
-                <div className="p-5 rounded-xl transition-all duration-300 hover:shadow-lg"
-                    style={{
-                        background: 'var(--card-bg)',
-                        border: '1px solid var(--border-color)'
-                    }}
-                >
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="p-2 rounded-lg" style={{ background: 'var(--accent-purple-light)' }}>
-                            <DollarSign className="w-5 h-5" style={{ color: 'var(--accent-purple)' }} />
-                        </div>
-                        <div>
-                            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Total Payments</p>
-                            <h3 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                                {formatCurrency(financialData?.summary.totalNetPay || 0)}
-                            </h3>
-                        </div>
-                    </div>
-                    <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                        {financialData?.summary.totalPayments || 0} transactions
-                    </div>
-                </div>
-            </div>
-
-            {/* Main Content based on Active Tab */}
-            {activeTab === 'overview' && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Production Distribution */}
-                    <div className="p-5 rounded-xl"
-                        style={{
-                            background: 'var(--card-bg)',
-                            border: '1px solid var(--border-color)'
-                        }}
-                    >
-                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                            <PieChart className="w-5 h-5" />
-                            Luwang Distribution by Bukid
-                        </h3>
-                        <div className="space-y-3">
-                            {overviewData?.production
-                                .sort((a, b) => b.totalLuwang - a.totalLuwang)
-                                .map((item, index) => (
-                                    <div key={index} className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 cursor-pointer"
-                                        onClick={() => handleViewBukidDetails(item.bukidId)}
-                                        style={{ background: 'var(--card-secondary-bg)' }}
-                                    >
-                                        <div className="flex items-center">
-                                            <div className="w-3 h-3 rounded-full mr-3"
-                                                style={{ background: `hsl(${index * 60}, 70%, 50%)` }}
-                                            ></div>
-                                            <div>
-                                                <div className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>
-                                                    {item.bukidName}
-                                                </div>
-                                                <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                                                    {formatNumber(item.totalLuwang)} luwang
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <ChevronRight className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
-                                    </div>
-                                ))}
-                        </div>
-                    </div>
-
-                    {/* Performance Ranking */}
-                    <div className="p-5 rounded-xl"
-                        style={{
-                            background: 'var(--card-bg)',
-                            border: '1px solid var(--border-color)'
-                        }}
-                    >
-                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                            <TrendingUp className="w-5 h-5" />
-                            Top Performing Bukids
-                        </h3>
-                        <div className="space-y-3">
-                            {comparisonData?.bukids
-                                .sort((a, b) => b.metrics.efficiency - a.metrics.efficiency)
-                                .slice(0, 5)
-                                .map((bukid, index) => (
-                                    <div key={index} className="flex items-center justify-between p-3 rounded-lg"
-                                        style={{ background: 'var(--card-secondary-bg)' }}
-                                    >
-                                        <div className="flex items-center">
-                                            <div className="w-8 h-8 rounded-full flex items-center justify-center mr-3 text-sm font-bold"
-                                                style={{
-                                                    background: index === 0 ? 'var(--accent-gold-light)' :
-                                                        index === 1 ? 'var(--accent-silver-light)' :
-                                                            index === 2 ? 'var(--accent-bronze-light)' : 'var(--card-bg)',
-                                                    color: index === 0 ? 'var(--accent-gold)' :
-                                                        index === 1 ? 'var(--accent-silver)' :
-                                                            index === 2 ? 'var(--accent-bronze)' : 'var(--text-secondary)'
-                                                }}
-                                            >
-                                                #{index + 1}
-                                            </div>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="font-semibold text-sm" style={{ color: 'var(--accent-green)' }}>
-                                                {formatPercentage(bukid.metrics.efficiency)}
-                                            </div>
-                                            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                                                Efficiency
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {activeTab === 'production' && productionTrendData && (
-                <div className="p-5 rounded-xl"
-                    style={{
-                        background: 'var(--card-bg)',
-                        border: '1px solid var(--border-color)'
-                    }}
-                >
-                    <div className="flex justify-between items-center mb-6">
-                        <h3 className="text-lg font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                            <TrendingUp className="w-5 h-5" />
-                            Production Trend ({productionTrendData.interval})
-                        </h3>
-                        <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                            Total: {formatNumber(productionTrendData.summary.totalLuwang)} luwang
-                        </div>
-                    </div>
-                    <div className="space-y-4">
-                        {productionTrendData.trend.map((period, index) => (
-                            <div key={index} className="p-4 rounded-lg"
-                                style={{ background: 'var(--card-secondary-bg)' }}
+            {/* Comparison Mode - Bukid Selection */}
+            {comparisonMode && (
+                <div className="windows-card p-5 mb-6">
+                    <h3 className="text-lg font-semibold mb-4 windows-title" style={{ color: 'var(--text-primary)' }}>
+                        Select Bukids to Compare
+                    </h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {allBukids.map(bukid => (
+                            <div
+                                key={bukid.id}
+                                onClick={() => handleComparisonToggle(bukid.id)}
+                                className={`p-4 rounded-lg cursor-pointer transition-all duration-200 ${
+                                    selectedBukidIds.includes(bukid.id)
+                                        ? 'border-2'
+                                        : 'border hover:border'
+                                }`}
+                                style={{
+                                    borderColor: selectedBukidIds.includes(bukid.id)
+                                        ? 'var(--primary-color)'
+                                        : 'var(--border-color)',
+                                    background: selectedBukidIds.includes(bukid.id)
+                                        ? 'var(--primary-light)'
+                                        : 'var(--card-bg)'
+                                }}
                             >
-                                <div className="flex justify-between items-center mb-2">
-                                    <div className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                                        {period.period}
-                                    </div>
-                                    <div className="font-semibold" style={{ color: 'var(--accent-gold)' }}>
-                                        {formatNumber(period.totalLuwang)} luwang
-                                    </div>
+                                <div className="flex items-center justify-between mb-2">
+                                    <Building className="w-5 h-5" style={{ color: 'var(--accent-earth)' }} />
+                                    {selectedBukidIds.includes(bukid.id) && (
+                                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs"
+                                             style={{ background: 'var(--primary-color)', color: 'white' }}>
+                                            ✓
+                                        </div>
+                                    )}
                                 </div>
-                                <div className="flex justify-between text-sm" style={{ color: 'var(--text-secondary)' }}>
-                                    <span>{period.assignmentCount} assignments</span>
-                                    <span>Avg: {formatNumber(period.averageLuwang)}/assignment</span>
-                                </div>
-                                <div className="mt-2 h-2 rounded-full overflow-hidden" style={{ background: 'var(--card-bg)' }}>
-                                    <div
-                                        className="h-full rounded-full"
-                                        style={{
-                                            width: `${(period.totalLuwang / Math.max(...productionTrendData.trend.map(p => p.totalLuwang))) * 100}%`,
-                                            background: 'linear-gradient(90deg, var(--accent-gold-light), var(--accent-gold))'
-                                        }}
-                                    ></div>
-                                </div>
+                                <h4 className="font-medium windows-title" style={{ color: 'var(--text-primary)' }}>
+                                    {bukid.name}
+                                </h4>
+                                <p className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                    Click to {selectedBukidIds.includes(bukid.id) ? 'remove' : 'add'}
+                                </p>
                             </div>
                         ))}
                     </div>
+                    {selectedBukidIds.length > 0 && (
+                        <div className="mt-4 p-3 rounded-lg" style={{ background: 'var(--card-secondary-bg)' }}>
+                            <p className="text-sm windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                Selected {selectedBukidIds.length} bukid{selectedBukidIds.length > 1 ? 's' : ''} for comparison
+                            </p>
+                        </div>
+                    )}
                 </div>
             )}
 
-            {activeTab === 'financial' && financialData && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className="p-5 rounded-xl"
-                        style={{
-                            background: 'var(--card-bg)',
-                            border: '1px solid var(--border-color)'
-                        }}
-                    >
-                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                            <DollarSign className="w-5 h-5" />
-                            Financial Summary
-                        </h3>
-                        <div className="grid grid-cols-2 gap-4 mb-6">
-                            <div className="p-4 rounded-lg text-center"
-                                style={{ background: 'var(--card-secondary-bg)' }}
-                            >
-                                <div className="text-2xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
-                                    {formatCurrency(financialData.summary.totalGrossPay)}
-                                </div>
-                                <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Gross Pay</div>
-                            </div>
-                            <div className="p-4 rounded-lg text-center"
-                                style={{ background: 'var(--card-secondary-bg)' }}
-                            >
-                                <div className="text-2xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
-                                    {formatCurrency(financialData.summary.totalNetPay)}
-                                </div>
-                                <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Net Pay</div>
-                            </div>
-                            <div className="p-4 rounded-lg text-center"
-                                style={{ background: 'var(--card-secondary-bg)' }}
-                            >
-                                <div className="text-2xl font-bold mb-1" style={{ color: 'var(--accent-red)' }}>
-                                    {formatCurrency(financialData.summary.totalDeductions)}
-                                </div>
-                                <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Deductions</div>
-                            </div>
-                            <div className="p-4 rounded-lg text-center"
-                                style={{ background: 'var(--card-secondary-bg)' }}
-                            >
-                                <div className="text-2xl font-bold mb-1" style={{ color: 'var(--accent-green)' }}>
-                                    {formatCurrency(financialData.summary.averagePayPerLuwang)}
-                                </div>
-                                <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Avg/Luwang</div>
-                            </div>
-                        </div>
-                        <div>
-                            <h4 className="font-medium mb-3" style={{ color: 'var(--text-primary)' }}>Recent Payments</h4>
-                            <div className="space-y-2">
-                                {financialData.payments.slice(0, 5).map((payment, index) => (
-                                    <div key={index} className="flex justify-between items-center p-3 rounded-lg"
-                                        style={{ background: 'var(--card-secondary-bg)' }}
-                                    >
-                                        <div>
-                                            <div className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>
-                                                {payment.workerName}
-                                            </div>
-                                            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                                                {payment.pitakLocation}
-                                            </div>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-                                                {formatCurrency(payment.netPay)}
-                                            </div>
-                                            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                                                {formatDate(payment.paymentDate)}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="p-5 rounded-xl"
-                        style={{
-                            background: 'var(--card-bg)',
-                            border: '1px solid var(--border-color)'
-                        }}
-                    >
-                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                            <Calendar className="w-5 h-5" />
-                            Payment Timeline
-                        </h3>
-                        <div className="space-y-3">
-                            {financialData.timeline.map((month, index) => (
-                                <div key={index} className="p-4 rounded-lg"
-                                    style={{ background: 'var(--card-secondary-bg)' }}
+            {/* Tabs for Single Bukid View */}
+            {!comparisonMode && selectedBukidId && (
+                <div className="border-b" style={{ borderColor: 'var(--border-color)' }}>
+                    <div className="flex space-x-1">
+                        {singleBukidTabs.map(tab => {
+                            const Icon = tab.icon;
+                            return (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`px-4 py-2 text-sm font-medium rounded-t-lg flex items-center gap-2 ${
+                                        activeTab === tab.id
+                                            ? 'border-b-2'
+                                            : 'hover:bg-gray-50'
+                                    }`}
+                                    style={{
+                                        borderColor: activeTab === tab.id ? 'var(--primary-color)' : 'transparent',
+                                        color: activeTab === tab.id ? 'var(--primary-color)' : 'var(--text-secondary)',
+                                        background: activeTab === tab.id ? 'var(--card-bg)' : 'transparent'
+                                    }}
                                 >
-                                    <div className="flex justify-between items-center mb-2">
-                                        <div className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                                            {month.month}
-                                        </div>
-                                        <div className="font-semibold" style={{ color: 'var(--accent-green)' }}>
-                                            {formatCurrency(month.netPay)}
-                                        </div>
-                                    </div>
-                                    <div className="flex justify-between text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
-                                        <span>{month.count} payments</span>
-                                        <span>{formatCurrency(month.grossPay)} gross</span>
-                                    </div>
-                                    <div className="flex items-center text-xs" style={{ color: 'var(--text-secondary)' }}>
-                                        <div className="flex-1">
-                                            Deductions: {formatCurrency(month.deductions)}
-                                        </div>
-                                        <div>
-                                            Rate: {formatPercentage(month.deductions / month.grossPay)}
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
+                                    <Icon className="w-4 h-4" />
+                                    {tab.label}
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
             )}
 
-            {activeTab === 'workers' && workerDistributionData && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className="p-5 rounded-xl"
-                        style={{
-                            background: 'var(--card-bg)',
-                            border: '1px solid var(--border-color)'
-                        }}
-                    >
-                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                            <Users className="w-5 h-5" />
-                            Workers per Pitak
-                        </h3>
-                        <div className="space-y-3">
-                            {workerDistributionData.workersPerPitak
-                                .sort((a, b) => b.workerCount - a.workerCount)
-                                .slice(0, 8)
-                                .map((item, index) => (
-                                    <div key={index} className="flex items-center justify-between p-3 rounded-lg"
-                                        style={{ background: 'var(--card-secondary-bg)' }}
-                                    >
-                                        <div className="flex-1">
-                                            <div className="font-medium text-sm mb-1" style={{ color: 'var(--text-primary)' }}>
-                                                {item.pitakLocation}
-                                            </div>
-                                            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                                                {item.workerNames.slice(0, 2).join(', ')}
-                                                {item.workerNames.length > 2 && ` +${item.workerNames.length - 2} more`}
-                                            </div>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="font-semibold text-lg" style={{ color: 'var(--accent-sky)' }}>
-                                                {item.workerCount}
-                                            </div>
-                                            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                                                workers
-                                            </div>
-                                        </div>
+            {/* Content Area */}
+            <div className="space-y-6">
+                {/* Overview Tab or All Bukids View */}
+                {(activeTab === 'overview' || !selectedBukidId) && !comparisonMode && (
+                    <div className="space-y-6">
+                        {/* Summary Cards */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {/* Total Bukids */}
+                            <div className="windows-card p-5">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="p-3 rounded-lg" style={{ background: 'var(--accent-earth-light)' }}>
+                                        <Building className="w-6 h-6" style={{ color: 'var(--accent-earth)' }} />
                                     </div>
-                                ))}
-                        </div>
-                    </div>
-
-                    <div className="p-5 rounded-xl"
-                        style={{
-                            background: 'var(--card-bg)',
-                            border: '1px solid var(--border-color)'
-                        }}
-                    >
-                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                            <MapPin className="w-5 h-5" />
-                            Worker Distribution Summary
-                        </h3>
-                        <div className="space-y-6">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="p-4 rounded-lg text-center"
-                                    style={{ background: 'var(--card-secondary-bg)' }}
-                                >
-                                    <div className="text-2xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
-                                        {workerDistributionData.summary.totalWorkers}
-                                    </div>
-                                    <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Total Workers</div>
+                                    <span className="px-3 py-1 rounded-full text-xs font-medium"
+                                          style={{ background: 'var(--accent-green-light)', color: 'var(--accent-green)' }}>
+                                        +12.5%
+                                    </span>
                                 </div>
-                                <div className="p-4 rounded-lg text-center"
-                                    style={{ background: 'var(--card-secondary-bg)' }}
-                                >
-                                    <div className="text-2xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
-                                        {workerDistributionData.summary.totalPitaks}
-                                    </div>
-                                    <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Total Pitaks</div>
+                                <h3 className="text-3xl font-bold mb-1 windows-title" style={{ color: 'var(--text-primary)' }}>
+                                    {overviewData?.summary.totalBukids || 0}
+                                </h3>
+                                <p className="text-sm mb-4 windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                    Total Bukids
+                                </p>
+                                <div className="flex justify-between text-xs">
+                                    <span className="windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                        <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ background: 'var(--accent-green)' }}></span>
+                                        Active: {overviewData?.summary.activeBukids || 0}
+                                    </span>
+                                    <span className="windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                        <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ background: 'var(--accent-gray)' }}></span>
+                                        Inactive: {overviewData?.summary.inactiveBukids || 0}
+                                    </span>
                                 </div>
                             </div>
-                            <div className="space-y-4">
-                                <div>
-                                    <div className="flex justify-between text-sm mb-1">
-                                        <span style={{ color: 'var(--text-secondary)' }}>Avg. Workers per Pitak</span>
-                                        <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                                            {workerDistributionData.summary.avgWorkersPerPitak.toFixed(1)}
-                                        </span>
+
+                            {/* Total Luwang */}
+                            <div className="windows-card p-5">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="p-3 rounded-lg" style={{ background: 'var(--accent-gold-light)' }}>
+                                        <Crop className="w-6 h-6" style={{ color: 'var(--accent-gold)' }} />
                                     </div>
-                                    <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--card-bg)' }}>
-                                        <div
-                                            className="h-full rounded-full"
-                                            style={{
-                                                width: `${(workerDistributionData.summary.avgWorkersPerPitak / 10) * 100}%`,
-                                                background: 'linear-gradient(90deg, var(--accent-sky-light), var(--accent-sky))'
-                                            }}
-                                        ></div>
-                                    </div>
+                                    <span className="px-3 py-1 rounded-full text-xs font-medium"
+                                          style={{ background: 'var(--accent-green-light)', color: 'var(--accent-green)' }}>
+                                        +8.3%
+                                    </span>
                                 </div>
-                                <div>
-                                    <div className="flex justify-between text-sm mb-1">
-                                        <span style={{ color: 'var(--text-secondary)' }}>Avg. Pitaks per Worker</span>
-                                        <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                                            {workerDistributionData.summary.avgPitaksPerWorker.toFixed(1)}
-                                        </span>
+                                <h3 className="text-3xl font-bold mb-1 windows-title" style={{ color: 'var(--text-primary)' }}>
+                                    {formatNumber(overviewData?.production.reduce((sum, p) => sum + p.totalLuwang, 0) || 0)}
+                                </h3>
+                                <p className="text-sm mb-4 windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                    Total Luwang Produced
+                                </p>
+                                <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                    Average per bukid: {formatNumber(
+                                        overviewData?.production?.reduce((sum, p) => sum + p.totalLuwang, 0) / 
+                                        (overviewData?.production.length || 1) || 0
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Total Pitaks */}
+                            <div className="windows-card p-5">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="p-3 rounded-lg" style={{ background: 'var(--accent-green-light)' }}>
+                                        <Layers className="w-6 h-6" style={{ color: 'var(--accent-green)' }} />
                                     </div>
-                                    <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--card-bg)' }}>
-                                        <div
-                                            className="h-full rounded-full"
-                                            style={{
-                                                width: `${(workerDistributionData.summary.avgPitaksPerWorker / 5) * 100}%`,
-                                                background: 'linear-gradient(90deg, var(--accent-green-light), var(--accent-green))'
-                                            }}
-                                        ></div>
-                                    </div>
+                                    <span className="px-3 py-1 rounded-full text-xs font-medium"
+                                          style={{ background: 'var(--accent-green-light)', color: 'var(--accent-green)' }}>
+                                        +5.2%
+                                    </span>
+                                </div>
+                                <h3 className="text-3xl font-bold mb-1 windows-title" style={{ color: 'var(--text-primary)' }}>
+                                    {formatNumber(overviewData?.distribution.reduce((sum, d) => sum + d.pitakCount, 0) || 0)}
+                                </h3>
+                                <p className="text-sm mb-4 windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                    Total Pitaks
+                                </p>
+                                <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                    Average per bukid: {formatNumber(
+                                        overviewData?.distribution.reduce((sum, d) => sum + d.pitakCount, 0) / 
+                                        (overviewData?.distribution.length || 1) || 0
+                                    )}
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </div>
-            )}
 
-            {activeTab === 'comparison' && comparisonData && (
-                <div className="p-5 rounded-xl"
-                    style={{
-                        background: 'var(--card-bg)',
-                        border: '1px solid var(--border-color)'
-                    }}
-                >
-                    <div className="flex justify-between items-center mb-6">
-                        <h3 className="text-lg font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                            <GitCompare className="w-5 h-5" />
-                            Bukid Comparison
-                        </h3>
-                        <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                            Average Efficiency: {formatPercentage(comparisonData.summary.averageEfficiency)}
-                        </div>
-                    </div>
-                    <div className="overflow-x-auto">
-                        <table className="w-full">
-                            <thead>
-                                <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                                    <th className="text-left py-3 px-4 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Bukid</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Pitaks</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Luwang</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Efficiency</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Net Pay</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Rank</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {comparisonData.bukids.map((bukid, index) => (
-                                    <tr key={index} className="hover:bg-gray-50 cursor-pointer"
-                                        onClick={() => handleViewBukidDetails(bukid.bukidId)}
-                                        style={{ borderBottom: '1px solid var(--border-color)' }}
-                                    >
-                                        <td className="py-3 px-4 text-sm" style={{ color: 'var(--text-primary)' }}>
-                                            {bukid.metrics.pitaks}
-                                        </td>
-                                        <td className="py-3 px-4 text-sm" style={{ color: 'var(--text-primary)' }}>
-                                            {formatNumber(bukid.metrics.totalLuwang)}
-                                        </td>
-                                        <td className="py-3 px-4">
+                        {/* Production Distribution */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <div className="windows-card p-5">
+                                <h3 className="text-lg font-semibold mb-4 windows-title flex items-center gap-2"
+                                    style={{ color: 'var(--text-primary)' }}>
+                                    <PieChart className="w-5 h-5" />
+                                    Production Distribution
+                                </h3>
+                                <div className="space-y-4">
+                                    {overviewData?.production.slice(0, 5).map((item, index) => (
+                                        <div key={index} className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50">
                                             <div className="flex items-center">
-                                                <div className="w-16 h-2 rounded-full mr-2 overflow-hidden" style={{ background: 'var(--card-bg)' }}>
-                                                    <div
-                                                        className="h-full rounded-full"
-                                                        style={{
-                                                            width: `${bukid.metrics.efficiency}%`,
-                                                            background: bukid.metrics.efficiency >= 80 ? 'var(--accent-green)' :
-                                                                bukid.metrics.efficiency >= 60 ? 'var(--accent-yellow)' : 'var(--accent-red)'
-                                                        }}
-                                                    ></div>
-                                                </div>
-                                                <span className="text-sm font-medium" style={{ color: bukid.metrics.efficiency >= 80 ? 'var(--accent-green)' :
-                                                    bukid.metrics.efficiency >= 60 ? 'var(--accent-yellow)' : 'var(--accent-red)' }}>
-                                                    {formatPercentage(bukid.metrics.efficiency)}
+                                                <div className="w-3 h-3 rounded-full mr-3" 
+                                                     style={{ background: `hsl(${index * 60}, 70%, 60%)` }}></div>
+                                                <span className="font-medium windows-title" style={{ color: 'var(--text-primary)' }}>
+                                                    {item.bukidName}
                                                 </span>
                                             </div>
-                                        </td>
-                                        <td className="py-3 px-4 text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                                            {formatCurrency(bukid.metrics.totalNetPay)}
-                                        </td>
-                                        <td className="py-3 px-4">
-                                            <div className="inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold"
-                                                style={{
-                                                    background: bukid.rankings.efficiency.rank === 1 ? 'var(--accent-gold-light)' :
-                                                        bukid.rankings.efficiency.rank === 2 ? 'var(--accent-silver-light)' :
-                                                            bukid.rankings.efficiency.rank === 3 ? 'var(--accent-bronze-light)' : 'var(--card-bg)',
-                                                    color: bukid.rankings.efficiency.rank === 1 ? 'var(--accent-gold)' :
-                                                        bukid.rankings.efficiency.rank === 2 ? 'var(--accent-silver)' :
-                                                            bukid.rankings.efficiency.rank === 3 ? 'var(--accent-bronze)' : 'var(--text-secondary)'
-                                                }}
-                                            >
-                                                #{bukid.rankings.efficiency.rank}
+                                            <div className="flex items-center gap-3">
+                                                <span className="font-semibold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                                    {formatNumber(item.totalLuwang)} Luwang
+                                                </span>
+                                                <button
+                                                    onClick={() => navigateToBukid(item.bukidId)}
+                                                    className="p-1 rounded hover:bg-gray-100"
+                                                    style={{ color: 'var(--primary-color)' }}
+                                                >
+                                                    <Eye className="w-4 h-4" />
+                                                </button>
                                             </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
 
-            {/* Recommendations */}
-            {comparisonData && (
-                <div className="p-5 rounded-xl"
-                    style={{
-                        background: 'var(--card-bg)',
-                        border: '1px solid var(--border-color)'
+                            <div className="windows-card p-5">
+                                <h3 className="text-lg font-semibold mb-4 windows-title flex items-center gap-2"
+                                    style={{ color: 'var(--text-primary)' }}>
+                                    <BarChart3 className="w-5 h-5" />
+                                    Top Performing Bukids
+                                </h3>
+                                <div className="space-y-4">
+                                    {overviewData?.production
+                                        .sort((a, b) => b.totalLuwang - a.totalLuwang)
+                                        .slice(0, 5)
+                                        .map((item, index) => (
+                                            <div key={index} className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50">
+                                                <div className="flex items-center">
+                                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mr-3 ${
+                                                        index === 0 ? 'bg-yellow-100 text-yellow-800' :
+                                                        index === 1 ? 'bg-gray-100 text-gray-800' :
+                                                        index === 2 ? 'bg-orange-100 text-orange-800' :
+                                                        'bg-blue-50 text-blue-800'
+                                                    }`}>
+                                                        #{index + 1}
+                                                    </div>
+                                                    <div>
+                                                        <div className="font-medium windows-title" style={{ color: 'var(--text-primary)' }}>
+                                                            {item.bukidName}
+                                                        </div>
+                                                        <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                                            ID: {item.bukidId}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="font-semibold windows-title" style={{ color: 'var(--accent-gold)' }}>
+                                                        {formatNumber(item.totalLuwang)} Luwang
+                                                    </div>
+                                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                                        {formatNumber(item.totalLuwang / 30)} avg/day
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Single Bukid Details */}
+                {!comparisonMode && selectedBukidId && detailsData && (
+                    <div className="space-y-6">
+                        {/* Bukid Information */}
+                        <div className="windows-card p-5">
+                            <div className="flex justify-between items-start mb-6">
+                                <div>
+                                    <h3 className="text-xl font-bold mb-2 windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        {detailsData.bukidInfo.name}
+                                    </h3>
+                                    <div className="flex flex-wrap gap-4">
+                                        {detailsData.bukidInfo.location && (
+                                            <div className="flex items-center gap-2">
+                                                <MapPin className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+                                                <span className="text-sm windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                                    {detailsData.bukidInfo.location}
+                                                </span>
+                                            </div>
+                                        )}
+                                        <div className="flex items-center gap-2">
+                                            <Calendar className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+                                            <span className="text-sm windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                                Created: {formatDate(detailsData.bukidInfo.createdAt)}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <Clock className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+                                            <span className="text-sm windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                                Updated: {formatDate(detailsData.bukidInfo.updatedAt)}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="px-4 py-2 rounded-full text-sm font-medium"
+                                     style={{ background: 'var(--accent-green-light)', color: 'var(--accent-green)' }}>
+                                    Active
+                                </div>
+                            </div>
+
+                            {/* Summary Stats */}
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                                <div className="text-center p-4 rounded-lg" style={{ background: 'var(--card-secondary-bg)' }}>
+                                    <Layers className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--accent-green)' }} />
+                                    <div className="text-xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        {detailsData.summary.totalPitaks}
+                                    </div>
+                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>Total Pitaks</div>
+                                </div>
+                                <div className="text-center p-4 rounded-lg" style={{ background: 'var(--card-secondary-bg)' }}>
+                                    <Users className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--accent-purple)' }} />
+                                    <div className="text-xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        {detailsData.summary.totalWorkers}
+                                    </div>
+                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>Workers</div>
+                                </div>
+                                <div className="text-center p-4 rounded-lg" style={{ background: 'var(--card-secondary-bg)' }}>
+                                    <Crop className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--accent-gold)' }} />
+                                    <div className="text-xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        {formatNumber(detailsData.summary.totalLuwang)}
+                                    </div>
+                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>Total Luwang</div>
+                                </div>
+                                <div className="text-center p-4 rounded-lg" style={{ background: 'var(--card-secondary-bg)' }}>
+                                    <DollarSign className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--accent-blue)' }} />
+                                    <div className="text-xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        {formatCurrency(detailsData.summary.totalPayments)}
+                                    </div>
+                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>Payments</div>
+                                </div>
+                                <div className="text-center p-4 rounded-lg" style={{ background: 'var(--card-secondary-bg)' }}>
+                                    <Percent className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--accent-red)' }} />
+                                    <div className="text-xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        {formatPercentage(detailsData.financials.totalDeductions / detailsData.financials.totalGrossPay * 100)}
+                                    </div>
+                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>Deduction Rate</div>
+                                </div>
+                            </div>
+
+                            {/* Pitaks List */}
+                            <div>
+                                <h4 className="font-semibold mb-4 windows-title flex items-center gap-2"
+                                    style={{ color: 'var(--text-primary)' }}>
+                                    <Layers className="w-5 h-5" />
+                                    Pitaks ({detailsData.pitaks.length})
+                                </h4>
+                                <div className="space-y-3">
+                                    {detailsData.pitaks.slice(0, 5).map((pitak, index) => (
+                                        <div key={pitak.id} className="flex justify-between items-center p-3 rounded-lg hover:bg-gray-50">
+                                            <div>
+                                                <div className="font-medium windows-title" style={{ color: 'var(--text-primary)' }}>
+                                                    {pitak.location}
+                                                </div>
+                                                <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                                    Status: <span style={{ 
+                                                        color: pitak.status === 'active' ? 'var(--accent-green)' :
+                                                               pitak.status === 'pending' ? 'var(--accent-yellow)' : 'var(--accent-red)'
+                                                    }}>{pitak.status}</span>
+                                                    • Assignments: {pitak.totalAssignments}
+                                                    • Workers: {pitak.workers.length}
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="font-semibold windows-title" style={{ color: 'var(--accent-gold)' }}>
+                                                    {formatNumber(pitak.totalLuwang)} Luwang
+                                                </div>
+                                                <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                                    {pitak.activeAssignments} active
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Assignment Statistics */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="windows-card p-5">
+                                <h4 className="font-semibold mb-4 windows-title flex items-center gap-2"
+                                    style={{ color: 'var(--text-primary)' }}>
+                                    <Activity className="w-5 h-5" />
+                                    Assignment Statistics
+                                </h4>
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center">
+                                        <span className="windows-text" style={{ color: 'var(--text-secondary)' }}>Total Assignments</span>
+                                        <span className="font-semibold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                            {detailsData.assignments.total}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="windows-text" style={{ color: 'var(--text-secondary)' }}>Active</span>
+                                        <span className="font-semibold windows-title" style={{ color: 'var(--accent-green)' }}>
+                                            {detailsData.assignments.active}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="windows-text" style={{ color: 'var(--text-secondary)' }}>Completed</span>
+                                        <span className="font-semibold windows-title" style={{ color: 'var(--accent-blue)' }}>
+                                            {detailsData.assignments.completed}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="windows-text" style={{ color: 'var(--text-secondary)' }}>Cancelled</span>
+                                        <span className="font-semibold windows-title" style={{ color: 'var(--accent-red)' }}>
+                                            {detailsData.assignments.cancelled}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="windows-card p-5">
+                                <h4 className="font-semibold mb-4 windows-title flex items-center gap-2"
+                                    style={{ color: 'var(--text-primary)' }}>
+                                    <Wallet className="w-5 h-5" />
+                                    Financial Summary
+                                </h4>
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center">
+                                        <span className="windows-text" style={{ color: 'var(--text-secondary)' }}>Total Gross Pay</span>
+                                        <span className="font-semibold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                            {formatCurrency(detailsData.financials.totalGrossPay)}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="windows-text" style={{ color: 'var(--text-secondary)' }}>Total Deductions</span>
+                                        <span className="font-semibold windows-title" style={{ color: 'var(--accent-red)' }}>
+                                            {formatCurrency(detailsData.financials.totalDeductions)}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="windows-text" style={{ color: 'var(--text-secondary)' }}>Total Net Pay</span>
+                                        <span className="font-semibold windows-title" style={{ color: 'var(--accent-green)' }}>
+                                            {formatCurrency(detailsData.financials.totalNetPay)}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="windows-text" style={{ color: 'var(--text-secondary)' }}>Total Payments</span>
+                                        <span className="font-semibold windows-title" style={{ color: 'var(--accent-blue)' }}>
+                                            {formatCurrency(detailsData.financials.totalPayments)}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Production Tab */}
+                {activeTab === 'production' && productionTrendData && (
+                    <div className="space-y-6">
+                        <div className="windows-card p-5">
+                            <h3 className="text-lg font-semibold mb-6 windows-title flex items-center gap-2"
+                                style={{ color: 'var(--text-primary)' }}>
+                                <TrendingUp className="w-5 h-5" />
+                                Production Trend ({productionTrendData.interval})
+                            </h3>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                                <div className="text-center p-4 rounded-lg" style={{ background: 'var(--card-secondary-bg)' }}>
+                                    <Crop className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--accent-gold)' }} />
+                                    <div className="text-2xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        {formatNumber(productionTrendData.summary.totalLuwang)}
+                                    </div>
+                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>Total Luwang</div>
+                                </div>
+                                <div className="text-center p-4 rounded-lg" style={{ background: 'var(--card-secondary-bg)' }}>
+                                    <Package className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--accent-sky)' }} />
+                                    <div className="text-2xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        {productionTrendData.summary.totalAssignments}
+                                    </div>
+                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>Total Assignments</div>
+                                </div>
+                                <div className="text-center p-4 rounded-lg" style={{ background: 'var(--card-secondary-bg)' }}>
+                                    <BarChart3 className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--accent-green)' }} />
+                                    <div className="text-2xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        {formatNumber(productionTrendData.summary.totalPeriods)}
+                                    </div>
+                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>Periods Analyzed</div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                <h4 className="font-semibold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                    Production Timeline
+                                </h4>
+                                {productionTrendData.trend.slice(0, 10).map((item, index) => (
+                                    <div key={index} className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50">
+                                        <div className="font-medium windows-title" style={{ color: 'var(--text-primary)' }}>
+                                            {item.period}
+                                        </div>
+                                        <div className="flex items-center gap-6">
+                                            <div className="text-right">
+                                                <div className="font-semibold windows-title" style={{ color: 'var(--accent-gold)' }}>
+                                                    {formatNumber(item.totalLuwang)} Luwang
+                                                </div>
+                                                <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                                    {item.assignmentCount} assignments
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="font-semibold windows-title" style={{ color: 'var(--accent-blue)' }}>
+                                                    {formatNumber(item.averageLuwang)} avg
+                                                </div>
+                                                <div className="text-xs flex items-center"
+                                                     style={{ color: index > 0 && item.totalLuwang > productionTrendData.trend[index - 1].totalLuwang 
+                                                         ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                                                    {index > 0 ? (
+                                                        <>
+                                                            {item.totalLuwang > productionTrendData.trend[index - 1].totalLuwang 
+                                                                ? <ArrowUp className="w-3 h-3 mr-1" /> 
+                                                                : <ArrowDown className="w-3 h-3 mr-1" />}
+                                                            {Math.abs(((item.totalLuwang - productionTrendData.trend[index - 1].totalLuwang) / 
+                                                                productionTrendData.trend[index - 1].totalLuwang) * 100).toFixed(1)}%
+                                                        </>
+                                                    ) : '—'}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Workers Tab */}
+                {activeTab === 'workers' && workerDistributionData && (
+                    <div className="space-y-6">
+                        <div className="windows-card p-5">
+                            <h3 className="text-lg font-semibold mb-6 windows-title flex items-center gap-2"
+                                style={{ color: 'var(--text-primary)' }}>
+                                <Users className="w-5 h-5" />
+                                Worker Distribution
+                            </h3>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                                <div className="text-center p-4 rounded-lg" style={{ background: 'var(--card-secondary-bg)' }}>
+                                    <Users className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--accent-purple)' }} />
+                                    <div className="text-2xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        {workerDistributionData.summary.totalWorkers}
+                                    </div>
+                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>Total Workers</div>
+                                </div>
+                                <div className="text-center p-4 rounded-lg" style={{ background: 'var(--card-secondary-bg)' }}>
+                                    <Layers className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--accent-green)' }} />
+                                    <div className="text-2xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        {workerDistributionData.summary.totalPitaks}
+                                    </div>
+                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>Total Pitaks</div>
+                                </div>
+                                <div className="text-center p-4 rounded-lg" style={{ background: 'var(--card-secondary-bg)' }}>
+                                    <TrendingUp className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--accent-sky)' }} />
+                                    <div className="text-2xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        {workerDistributionData.summary.avgWorkersPerPitak.toFixed(1)}
+                                    </div>
+                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>Avg Workers/Pitak</div>
+                                </div>
+                                <div className="text-center p-4 rounded-lg" style={{ background: 'var(--card-secondary-bg)' }}>
+                                    <MapPin className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--accent-earth)' }} />
+                                    <div className="text-2xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        {workerDistributionData.summary.avgPitaksPerWorker.toFixed(1)}
+                                    </div>
+                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>Avg Pitaks/Worker</div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                <div>
+                                    <h4 className="font-semibold mb-4 windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        Workers per Pitak
+                                    </h4>
+                                    <div className="space-y-3">
+                                        {workerDistributionData.workersPerPitak.slice(0, 5).map((item, index) => (
+                                            <div key={item.pitakId} className="flex justify-between items-center p-3 rounded-lg hover:bg-gray-50">
+                                                <div>
+                                                    <div className="font-medium windows-title" style={{ color: 'var(--text-primary)' }}>
+                                                        {item.pitakLocation}
+                                                    </div>
+                                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                                        Status: <span style={{ 
+                                                            color: item.status === 'active' ? 'var(--accent-green)' :
+                                                                   item.status === 'pending' ? 'var(--accent-yellow)' : 'var(--accent-red)'
+                                                        }}>{item.status}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="font-semibold windows-title" style={{ color: 'var(--accent-purple)' }}>
+                                                        {item.workerCount} workers
+                                                    </div>
+                                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                                        {item.workerNames.slice(0, 2).join(', ')}
+                                                        {item.workerNames.length > 2 && ` +${item.workerNames.length - 2}`}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <h4 className="font-semibold mb-4 windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        Pitaks per Worker
+                                    </h4>
+                                    <div className="space-y-3">
+                                        {workerDistributionData.pitaksPerWorker.slice(0, 5).map((item, index) => (
+                                            <div key={item.workerId} className="flex justify-between items-center p-3 rounded-lg hover:bg-gray-50">
+                                                <div>
+                                                    <div className="font-medium windows-title" style={{ color: 'var(--text-primary)' }}>
+                                                        {item.workerName}
+                                                    </div>
+                                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                                        Status: <span style={{ 
+                                                            color: item.status === 'active' ? 'var(--accent-green)' :
+                                                                   item.status === 'pending' ? 'var(--accent-yellow)' : 'var(--accent-red)'
+                                                        }}>{item.status}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="font-semibold windows-title" style={{ color: 'var(--accent-green)' }}>
+                                                        {item.pitakCount} pitaks
+                                                    </div>
+                                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                                        {item.pitakLocations.slice(0, 2).join(', ')}
+                                                        {item.pitakLocations.length > 2 && ` +${item.pitakLocations.length - 2}`}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Financial Tab */}
+                {activeTab === 'financial' && financialSummaryData && (
+                    <div className="space-y-6">
+                        <div className="windows-card p-5">
+                            <h3 className="text-lg font-semibold mb-6 windows-title flex items-center gap-2"
+                                style={{ color: 'var(--text-primary)' }}>
+                                <DollarSign className="w-5 h-5" />
+                                Financial Summary
+                            </h3>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                                <div className="text-center p-4 rounded-lg" style={{ background: 'var(--card-secondary-bg)' }}>
+                                    <Wallet className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--accent-blue)' }} />
+                                    <div className="text-2xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        {formatCurrency(financialSummaryData.summary.totalGrossPay)}
+                                    </div>
+                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>Total Gross Pay</div>
+                                </div>
+                                <div className="text-center p-4 rounded-lg" style={{ background: 'var(--card-secondary-bg)' }}>
+                                    <Coins className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--accent-gold)' }} />
+                                    <div className="text-2xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        {formatCurrency(financialSummaryData.summary.totalNetPay)}
+                                    </div>
+                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>Total Net Pay</div>
+                                </div>
+                                <div className="text-center p-4 rounded-lg" style={{ background: 'var(--card-secondary-bg)' }}>
+                                    <Percent className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--accent-red)' }} />
+                                    <div className="text-2xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        {formatPercentage(financialSummaryData.summary.deductionRate)}
+                                    </div>
+                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>Deduction Rate</div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                <h4 className="font-semibold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                    Recent Payments
+                                </h4>
+                                <div className="space-y-3">
+                                    {financialSummaryData.payments.slice(0, 5).map((payment) => (
+                                        <div key={payment.id} 
+                                             className="flex justify-between items-center p-3 rounded-lg hover:bg-gray-50 cursor-pointer"
+                                             onClick={() => navigateToPayment(payment.id)}>
+                                            <div>
+                                                <div className="font-medium windows-title" style={{ color: 'var(--text-primary)' }}>
+                                                    {payment.workerName}
+                                                </div>
+                                                <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                                    {payment.pitakLocation} • {formatDate(payment.paymentDate)}
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="font-semibold windows-title" style={{ color: 'var(--accent-green)' }}>
+                                                    {formatCurrency(payment.netPay)}
+                                                </div>
+                                                <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                                    Gross: {formatCurrency(payment.grossPay)}
+                                                    {payment.manualDeduction > 0 && 
+                                                        ` • Deductions: ${formatCurrency(payment.manualDeduction)}`}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Comparison Mode */}
+                {comparisonMode && compareData && (
+                    <div className="space-y-6">
+                        <div className="windows-card p-5">
+                            <h3 className="text-lg font-semibold mb-6 windows-title flex items-center gap-2"
+                                style={{ color: 'var(--text-primary)' }}>
+                                <GitCompare className="w-5 h-5" />
+                                Bukid Comparison
+                            </h3>
+
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                                <div className="text-center p-4 rounded-lg" style={{ background: 'var(--card-secondary-bg)' }}>
+                                    <Building className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--accent-earth)' }} />
+                                    <div className="text-2xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        {compareData.summary.totalBukids}
+                                    </div>
+                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>Bukids Compared</div>
+                                </div>
+                                <div className="text-center p-4 rounded-lg" style={{ background: 'var(--card-secondary-bg)' }}>
+                                    <Layers className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--accent-green)' }} />
+                                    <div className="text-2xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        {compareData.summary.averagePitaks.toFixed(1)}
+                                    </div>
+                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>Avg Pitaks</div>
+                                </div>
+                                <div className="text-center p-4 rounded-lg" style={{ background: 'var(--card-secondary-bg)' }}>
+                                    <Crop className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--accent-gold)' }} />
+                                    <div className="text-2xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        {formatNumber(compareData.summary.averageLuwang)}
+                                    </div>
+                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>Avg Luwang</div>
+                                </div>
+                                <div className="text-center p-4 rounded-lg" style={{ background: 'var(--card-secondary-bg)' }}>
+                                    <Award className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--accent-blue)' }} />
+                                    <div className="text-2xl font-bold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                        {formatPercentage(compareData.summary.averageEfficiency)}
+                                    </div>
+                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>Avg Efficiency</div>
+                                </div>
+                            </div>
+
+                            <div className="overflow-x-auto">
+                                <table className="w-full">
+                                    <thead>
+                                        <tr className="border-b" style={{ borderColor: 'var(--border-color)' }}>
+                                            <th className="text-left py-3 px-4 windows-title" style={{ color: 'var(--text-primary)' }}>
+                                                Bukid
+                                            </th>
+                                            <th className="text-left py-3 px-4 windows-title" style={{ color: 'var(--text-primary)' }}>
+                                                Pitaks
+                                            </th>
+                                            <th className="text-left py-3 px-4 windows-title" style={{ color: 'var(--text-primary)' }}>
+                                                Total Luwang
+                                            </th>
+                                            <th className="text-left py-3 px-4 windows-title" style={{ color: 'var(--text-primary)' }}>
+                                                Total Payments
+                                            </th>
+                                            <th className="text-left py-3 px-4 windows-title" style={{ color: 'var(--text-primary)' }}>
+                                                Efficiency
+                                            </th>
+                                            <th className="text-left py-3 px-4 windows-title" style={{ color: 'var(--text-primary)' }}>
+                                                Overall Rank
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {compareData.bukids.map((bukid, index) => (
+                                            <tr key={bukid.bukidId} 
+                                                className="border-b hover:bg-gray-50 cursor-pointer"
+                                                style={{ borderColor: 'var(--border-color)' }}
+                                                onClick={() => navigateToBukid(bukid.bukidId)}>
+                                                <td className="py-3 px-4">
+                                                    <div className="font-medium windows-title" style={{ color: 'var(--text-primary)' }}>
+                                                        {bukid.name}
+                                                    </div>
+                                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                                        ID: {bukid.bukidId}
+                                                    </div>
+                                                </td>
+                                                <td className="py-3 px-4">
+                                                    <div className="font-semibold windows-title" style={{ color: 'var(--text-primary)' }}>
+                                                        {bukid.metrics.pitaks}
+                                                    </div>
+                                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                                        Rank: #{bukid.rankings.pitaks?.rank || 'N/A'}
+                                                    </div>
+                                                </td>
+                                                <td className="py-3 px-4">
+                                                    <div className="font-semibold windows-title" style={{ color: 'var(--accent-gold)' }}>
+                                                        {formatNumber(bukid.metrics.totalLuwang)}
+                                                    </div>
+                                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                                        {formatNumber(bukid.metrics.totalAssignments)} assignments
+                                                    </div>
+                                                </td>
+                                                <td className="py-3 px-4">
+                                                    <div className="font-semibold windows-title" style={{ color: 'var(--accent-green)' }}>
+                                                        {formatCurrency(bukid.metrics.totalNetPay)}
+                                                    </div>
+                                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                                        Gross: {formatCurrency(bukid.metrics.totalGrossPay)}
+                                                    </div>
+                                                </td>
+                                                <td className="py-3 px-4">
+                                                    <div className="font-semibold windows-title" 
+                                                         style={{ 
+                                                             color: bukid.metrics.efficiency >= 80 ? 'var(--accent-green)' :
+                                                                    bukid.metrics.efficiency >= 60 ? 'var(--accent-yellow)' : 'var(--accent-red)'
+                                                         }}>
+                                                        {formatPercentage(bukid.metrics.efficiency)}
+                                                    </div>
+                                                    <div className="text-xs windows-text" style={{ color: 'var(--text-secondary)' }}>
+                                                        Percentile: {bukid.rankings.efficiency?.percentile || 0}%
+                                                    </div>
+                                                </td>
+                                                <td className="py-3 px-4">
+                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
+                                                        index === 0 ? 'bg-yellow-100 text-yellow-800' :
+                                                        index === 1 ? 'bg-gray-100 text-gray-800' :
+                                                        index === 2 ? 'bg-orange-100 text-orange-800' :
+                                                        'bg-blue-50 text-blue-800'
+                                                    }`}>
+                                                        #{bukid.rankings.overall?.rank || index + 1}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Export Button */}
+            <div className="flex justify-end">
+                <button
+                    className="windows-btn windows-btn-primary flex items-center gap-2"
+                    onClick={() => {
+                        // Export functionality would go here
+                        alert('Export functionality would be implemented here');
                     }}
                 >
-                    <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
-                        Insights & Recommendations
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <div className="p-4 rounded-lg"
-                            style={{
-                                background: 'var(--accent-green-light)',
-                                border: '1px solid var(--accent-green)20'
-                            }}
-                        >
-                            <div className="font-medium text-sm mb-2" style={{ color: 'var(--accent-green-dark)' }}>
-                                Top Performer
-                            </div>
-                            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                                {comparisonData.bukids[0]?.name} leads with {formatPercentage(comparisonData.bukids[0]?.metrics.efficiency || 0)} efficiency
-                            </p>
-                        </div>
-                        <div className="p-4 rounded-lg"
-                            style={{
-                                background: 'var(--accent-sky-light)',
-                                border: '1px solid var(--accent-sky)20'
-                            }}
-                        >
-                            <div className="font-medium text-sm mb-2" style={{ color: 'var(--accent-sky-dark)' }}>
-                                Average Performance
-                            </div>
-                            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                                Overall efficiency: {formatPercentage(comparisonData.summary.averageEfficiency)}
-                            </p>
-                        </div>
-                        <div className="p-4 rounded-lg"
-                            style={{
-                                background: 'var(--accent-yellow-light)',
-                                border: '1px solid var(--accent-yellow)20'
-                            }}
-                        >
-                            <div className="font-medium text-sm mb-2" style={{ color: 'var(--accent-yellow-dark)' }}>
-                                Improvement Opportunity
-                            </div>
-                            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                                {comparisonData.bukids.length - 1} bukids below average efficiency
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            )}
+                    <Download className="w-4 h-4" />
+                    Export Report
+                </button>
+            </div>
         </div>
     );
 };
 
-export default BukidReportsPage;
+export default BukidAnalyticsPage;

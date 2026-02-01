@@ -1,15 +1,15 @@
+// components/Pitak/components/PitakActionsDropdown.tsx
 import React, { useRef, useEffect } from 'react';
 import {
   User, BookOpen, Layers, FileText,
-  CheckCircle, XCircle, Crop, Trash2, MoreVertical, Users,
-  History
+  CheckCircle, XCircle, Crop, Trash2, MoreVertical,
+  Users, History
 } from 'lucide-react';
 
 interface PitakActionsDropdownProps {
   pitak: any;
   onAssign: () => void;
   onViewAssignments: () => void;
-  onViewAssignmentHistory: () => void;
   onViewAssignedWorkers: () => void;
   onUpdateLuWang: () => void;
   onViewReport: () => void;
@@ -22,7 +22,6 @@ const PitakActionsDropdown: React.FC<PitakActionsDropdownProps> = ({
   pitak,
   onAssign,
   onViewAssignments,
-  onViewAssignmentHistory,
   onViewAssignedWorkers,
   onUpdateLuWang,
   onViewReport,
@@ -34,10 +33,7 @@ const PitakActionsDropdown: React.FC<PitakActionsDropdownProps> = ({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
-  const handleToggle = () => {
-    setIsOpen(!isOpen);
-  };
-
+  const handleToggle = () => setIsOpen(!isOpen);
   const handleAction = (action: () => void) => {
     action();
     setIsOpen(false);
@@ -46,34 +42,30 @@ const PitakActionsDropdown: React.FC<PitakActionsDropdownProps> = ({
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node) &&
-        buttonRef.current && !buttonRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current && !dropdownRef.current.contains(event.target as Node) &&
+        buttonRef.current && !buttonRef.current.contains(event.target as Node)
+      ) {
         setIsOpen(false);
       }
     };
-
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Calculate adaptive position for dropdown
+  // Adaptive positioning
   const getDropdownPosition = () => {
     if (!buttonRef.current) return {};
-    
     const rect = buttonRef.current.getBoundingClientRect();
-    const dropdownHeight = 350; // Estimated height of dropdown
+    const dropdownHeight = 320;
     const windowHeight = window.innerHeight;
-    
-    // Check if dropdown would overflow bottom of window
+
     if (rect.bottom + dropdownHeight > windowHeight) {
-      // Show above the button
       return {
         bottom: `${windowHeight - rect.top + 5}px`,
         right: `${window.innerWidth - rect.right}px`,
       };
     }
-    
-    // Show below the button
     return {
       top: `${rect.bottom + 5}px`,
       right: `${window.innerWidth - rect.right}px`,
@@ -101,125 +93,66 @@ const PitakActionsDropdown: React.FC<PitakActionsDropdownProps> = ({
             <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
               Pitak Actions
             </div>
-            
+
             {/* Assignments Section */}
             <div className="px-4 py-1 text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>
               Assignments
             </div>
-            
-            <button
-              onClick={() => handleAction(onAssign)}
-              className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-gray-50"
-              style={{ color: 'var(--text-primary)' }}
-            >
-              <User className="w-4 h-4" style={{ color: 'var(--accent-sky)' }} />
-              <span>Assign Worker</span>
+            <button onClick={() => handleAction(onAssign)} className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-gray-50">
+              <User className="w-4 h-4 text-sky-500" /> <span>Assign Worker</span>
             </button>
-            
-            <button
-              onClick={() => handleAction(onViewAssignments)}
-              className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-gray-50"
-              style={{ color: 'var(--text-primary)' }}
-            >
-              <BookOpen className="w-4 h-4" style={{ color: 'var(--accent-green)' }} />
-              <span>View Assignments</span>
+            <button onClick={() => handleAction(onViewAssignments)} className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-gray-50">
+              <BookOpen className="w-4 h-4 text-green-500" /> <span>View Assignments</span>
             </button>
-            
-            <button
-              onClick={() => handleAction(onViewAssignmentHistory)}
-              className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-gray-50"
-              style={{ color: 'var(--text-primary)' }}
-            >
-              <History className="w-4 h-4" style={{ color: 'var(--accent-purple)' }} />
-              <span>Assignment History</span>
-            </button>
-            
-            <button
-              onClick={() => handleAction(onViewAssignedWorkers)}
-              className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-gray-50"
-              style={{ color: 'var(--text-primary)' }}
-            >
-              <Users className="w-4 h-4" style={{ color: 'var(--accent-earth)' }} />
-              <span>Assigned Workers</span>
+            <button onClick={() => handleAction(onViewAssignedWorkers)} className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-gray-50">
+              <Users className="w-4 h-4 text-amber-600" /> <span>Assigned Workers</span>
             </button>
 
-            {/* Pitak Management Section */}
+            {/* Management Section */}
             <div className="px-4 py-1 text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>
               Management
             </div>
-            
-            <button
-              onClick={() => handleAction(onUpdateLuWang)}
-              className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-gray-50"
-              style={{ color: 'var(--text-primary)' }}
-            >
-              <Layers className="w-4 h-4" style={{ color: 'var(--accent-gold)' }} />
-              <span>Update LuWang</span>
+            <button onClick={() => handleAction(onUpdateLuWang)} className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-gray-50">
+              <Layers className="w-4 h-4 text-yellow-500" /> <span>Update LuWang</span>
             </button>
-            
-            <button
-              onClick={() => handleAction(onViewReport)}
-              className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-gray-50"
-              style={{ color: 'var(--text-primary)' }}
-            >
-              <FileText className="w-4 h-4" style={{ color: 'var(--accent-blue)' }} />
-              <span>Generate Report</span>
+            <button onClick={() => handleAction(onViewReport)} className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-gray-50">
+              <FileText className="w-4 h-4 text-blue-500" /> <span>Generate Report</span>
             </button>
 
-            {/* Status Management Section */}
+            {/* Status Section */}
             <div className="px-4 py-1 text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>
               Status
             </div>
-            
             {pitak.status !== 'completed' && (
               <>
-                <button
-                  onClick={() => handleAction(onUpdateStatus)}
-                  className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-gray-50"
-                  style={{ color: 'var(--text-primary)' }}
-                >
+                <button onClick={() => handleAction(onUpdateStatus)} className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-gray-50">
                   {pitak.status === 'active' ? (
                     <>
-                      <XCircle className="w-4 h-4" style={{ color: 'var(--accent-rust)' }} />
-                      <span>Deactivate Pitak</span>
+                      <XCircle className="w-4 h-4 text-red-500" /> <span>Deactivate Pitak</span>
                     </>
                   ) : (
                     <>
-                      <CheckCircle className="w-4 h-4" style={{ color: 'var(--accent-green)' }} />
-                      <span>Activate Pitak</span>
+                      <CheckCircle className="w-4 h-4 text-green-500" /> <span>Activate Pitak</span>
                     </>
                   )}
                 </button>
-                
-                <button
-                  onClick={() => handleAction(onMarkAsHarvested)}
-                  className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-gray-50"
-                  style={{ color: 'var(--text-primary)' }}
-                >
-                  <Crop className="w-4 h-4" style={{ color: 'var(--accent-gold)' }} />
-                  <span>Mark as Completed</span>
+                <button onClick={() => handleAction(onMarkAsHarvested)} className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-gray-50">
+                  <Crop className="w-4 h-4 text-orange-500" /> <span>Mark as Completed</span>
                 </button>
               </>
             )}
 
-            {/* Danger Zone Section */}
+            {/* Danger Zone */}
             <div className="border-t border-gray-200 my-1"></div>
-            
-            <div className="px-4 py-1 text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--accent-rust)' }}>
+            <div className="px-4 py-1 text-xs font-medium uppercase tracking-wider text-red-600">
               Danger Zone
             </div>
-            
-            <button
-              onClick={() => handleAction(onDelete)}
-              className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-red-50"
-              style={{ color: 'var(--accent-rust)' }}
-            >
-              <Trash2 className="w-4 h-4" />
-              <span>Delete Pitak</span>
+            <button onClick={() => handleAction(onDelete)} className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-red-50 text-red-600">
+              <Trash2 className="w-4 h-4" /> <span>Delete Pitak</span>
             </button>
 
             {/* Footer */}
-            <div className="px-4 py-2 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            <div className="px-4 py-2 text-xs text-gray-400">
               ID: {pitak.id} • Status: {pitak.status}
             </div>
           </div>

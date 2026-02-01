@@ -136,13 +136,14 @@ module.exports = async function updateBukidStatus(params = {}, queryRunner = nul
               worker: { id: assignment.worker.id },
               pitak: { id: pitak.id },
               session: { id: sessionId },
-              grossPay,
+              grossPay: grossPay,
               netPay: grossPay,
               manualDeduction: 0.0,
               totalDebtDeduction: 0.0,
               otherDeductions: 0.0,
               deductionBreakdown: null,
               status: "pending",
+              paymentMethod: 'cash',
               // @ts-ignore
               periodStart: pitak.startDate || null,
               // @ts-ignore

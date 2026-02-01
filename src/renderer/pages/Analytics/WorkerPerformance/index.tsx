@@ -18,15 +18,10 @@ import {
     TrendingDown,
     UserCheck, Coffee
 } from 'lucide-react';
-import dashboardAPI, {
-    type WorkersOverviewData,
-    type WorkerPerformanceData,
-    type WorkerStatusSummaryData,
-    type TopPerformersData,
-    type WorkerAttendanceData
-} from '../../../apis/dashboard';
+
 import { formatCurrency, formatNumber, formatDate, formatPercentage } from '../../../utils/formatters';
 import { hideLoading, showLoading } from '../../../utils/notification';
+import { workerPerformanceAPI, type TopPerformersData, type WorkerAttendanceData, type WorkerPerformanceData, type WorkersOverviewData, type WorkerStatusSummaryData } from '../../../apis/analytics/workerPerformance';
 
 const WorkerPerformancePage: React.FC = () => {
     const [loading, setLoading] = useState(true);
@@ -51,11 +46,11 @@ const WorkerPerformancePage: React.FC = () => {
             setError(null);
 
             const [overviewRes, performanceRes, statusRes, topPerformersRes, attendanceRes] = await Promise.all([
-                dashboardAPI.getWorkersOverview({ timeRange }),
-                dashboardAPI.getWorkerPerformance({ timeRange, filter: performanceFilter }),
-                dashboardAPI.getWorkerStatusSummary({ timeRange }),
-                dashboardAPI.getTopPerformers({ timeRange, category: 'overall' }),
-                dashboardAPI.getWorkerAttendance({ timeRange })
+                workerPerformanceAPI.getWorkersOverview({ timeRange }),
+                workerPerformanceAPI.getWorkerPerformance({ timeRange, filter: performanceFilter }),
+                workerPerformanceAPI.getWorkerStatusSummary({ timeRange }),
+                workerPerformanceAPI.getTopPerformers({ timeRange, category: 'overall' }),
+                workerPerformanceAPI.getWorkerAttendance({ timeRange })
             ]);
 
             if (overviewRes.status) setOverviewData(overviewRes.data);

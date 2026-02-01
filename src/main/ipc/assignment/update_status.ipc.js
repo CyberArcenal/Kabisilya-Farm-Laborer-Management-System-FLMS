@@ -150,13 +150,14 @@ module.exports = async (params, queryRunner) => {
           pitak: assignment.pitak ? { id: assignment.pitak.id } : null,
           // @ts-ignore
           session: assignment.session ? { id: assignment.session.id || sessionId } : { id: sessionId },
-          grossPay,
+          grossPay: grossPay,
           netPay: grossPay,
           manualDeduction: 0.0,
           totalDebtDeduction: 0.0,
           otherDeductions: 0.0,
           deductionBreakdown: null,
           status: "pending",
+          paymentMethod: 'cash',
           // @ts-ignore
           periodStart: assignment.pitak?.startDate || null,
           // @ts-ignore

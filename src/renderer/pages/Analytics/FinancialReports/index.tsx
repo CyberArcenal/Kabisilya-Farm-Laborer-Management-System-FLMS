@@ -16,15 +16,11 @@ import {
     CreditCard,
     Wallet, Target, LineChart, Bell
 } from 'lucide-react';
-import dashboardAPI, {
-    type FinancialOverviewData,
-    type DebtSummaryData,
-    type PaymentSummaryData,
-    type RevenueTrendData,
-    type DebtCollectionRateData
-} from '../../../apis/dashboard';
+;
 import { formatCurrency, formatDate, formatPercentage } from '../../../utils/formatters';
 import { hideLoading, showLoading } from '../../../utils/notification';
+import { financialAPI, type DebtCollectionRateData, type DebtSummaryData, type FinancialOverviewData, type PaymentSummaryData, type RevenueTrendData } from '../../../apis/analytics/financial';
+import dashboardAPI from '../../../apis/analytics/dashboard';
 
 const FinancialReportsPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
@@ -48,11 +44,11 @@ const FinancialReportsPage: React.FC = () => {
             setError(null);
 
             const [overviewRes, debtRes, paymentRes, revenueRes, collectionRes] = await Promise.all([
-                dashboardAPI.getFinancialOverview({ timeRange }),
-                dashboardAPI.getDebtSummary({ timeRange }),
-                dashboardAPI.getPaymentSummary({ timeRange }),
-                dashboardAPI.getRevenueTrend({ timeRange }),
-                dashboardAPI.getDebtCollectionRate({ timeRange })
+                financialAPI.getFinancialOverview({ timeRange }),
+                financialAPI.getDebtSummary({ timeRange }),
+                financialAPI.getPaymentSummary({ timeRange }),
+                financialAPI.getRevenueTrend({ timeRange }),
+                financialAPI.getDebtCollectionRate({ timeRange })
             ]);
 
             if (overviewRes.status) setOverviewData(overviewRes.data);

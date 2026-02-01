@@ -44,7 +44,7 @@ export const useAssignmentActions = (
     };
 
     const handleUpdateStatus = async (id: number, currentStatus: string) => {
-        const newStatus = currentStatus === 'active' ? 'completed' : 'active';
+        const newStatus = currentStatus;
         const action = newStatus === 'active' ? 'activate' : 'complete';
 
         const confirmed = await showConfirm({

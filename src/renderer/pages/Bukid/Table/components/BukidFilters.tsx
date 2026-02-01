@@ -11,8 +11,6 @@ interface BukidFiltersProps {
   setViewMode: (mode: 'grid' | 'table') => void;
   handleRefresh: () => void;
   refreshing: boolean;
-  kabisilyaFilter: number | null;
-  setKabisilyaFilter: (id: number | null) => void;
   handleStatusFilterChange: (status: string) => void;
 }
 

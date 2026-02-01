@@ -14,6 +14,10 @@ interface BukidTableViewProps {
   onEdit: (id: number) => void;
   onDelete: (id: number, name: string) => void;
   onUpdateStatus: (id: number, currentStatus: string) => void;
+  onAddNote: (id: number) => void;
+  onViewStats: (id: number) => void;
+  onImportCSV: (id: number) => void;
+  onExportCSV: (id: number) => void;
   sortBy: string;
   sortOrder: 'ASC' | 'DESC';
   onSort: (field: string) => void;
@@ -29,6 +33,10 @@ const BukidTableView: React.FC<BukidTableViewProps> = ({
   onEdit,
   onDelete,
   onUpdateStatus,
+  onAddNote,
+  onViewStats,
+  onImportCSV,
+  onExportCSV,
   sortBy,
   sortOrder,
   onSort
@@ -103,6 +111,10 @@ const BukidTableView: React.FC<BukidTableViewProps> = ({
                   onEdit={onEdit}
                   onDelete={onDelete}
                   onUpdateStatus={onUpdateStatus}
+                  onAddNote={onAddNote}
+                  onViewStats={onViewStats}
+                  onImportCSV={onImportCSV}
+                  onExportCSV={onExportCSV}
                 />
               );
             })}

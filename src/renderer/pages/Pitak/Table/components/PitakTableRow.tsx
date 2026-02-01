@@ -19,7 +19,6 @@ interface PitakTableRowProps {
   onDelete: (id: number) => void;
   onAssign: (id: number, pitakData: any) => void;
   onUpdateLuWang: (id: number, totalLuwang: number | null) => void;
-  onViewAssignments: (id: number) => void;
   onViewAssignedWorkers: (id: number, location?: string) => void;
   onViewReport: (id: number) => void;
   onMarkAsHarvested: (id: number) => void;
@@ -27,7 +26,6 @@ interface PitakTableRowProps {
   // New props for assignment viewing
   onViewAssignment: (assignmentId: number) => void;
   onViewPitakAssignments: (pitakId: number) => void;
-  onViewAssignmentHistory: (assignmentId: number) => void;
 }
 
 const PitakTableRow: React.FC<PitakTableRowProps> = ({
@@ -41,14 +39,12 @@ const PitakTableRow: React.FC<PitakTableRowProps> = ({
   onDelete,
   onAssign,
   onUpdateLuWang,
-  onViewAssignments,
   onViewAssignedWorkers,
   onViewReport,
   onMarkAsHarvested,
   onUpdateStatus,
   onViewAssignment,
   onViewPitakAssignments,
-  onViewAssignmentHistory
 }) => {
   const getStatusBadge = (status: string = 'active') => {
     const statusConfig = {
@@ -313,12 +309,6 @@ const PitakTableRow: React.FC<PitakTableRowProps> = ({
                 } else {
                   // Fallback to viewing all assignments
                   onViewPitakAssignments(pitak.id);
-                }
-              }}
-              onViewAssignmentHistory={() => {
-                const firstAssignment = pitak.assignments?.[0];
-                if (firstAssignment) {
-                  onViewAssignmentHistory(firstAssignment.id);
                 }
               }}
             />
