@@ -30,7 +30,7 @@ module.exports = async (workerId, userId) => {
     const debts = await debtRepository.find({
       // @ts-ignore
       where: { worker: { id: workerId } },
-      relations: ["history"],
+      relations: ["history", "session"],
     });
 
     // Calculate summary

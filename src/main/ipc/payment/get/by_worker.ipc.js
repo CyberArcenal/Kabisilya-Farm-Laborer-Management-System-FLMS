@@ -3,6 +3,7 @@
 
 const Payment = require("../../../../entities/Payment");
 const { AppDataSource } = require("../../../db/dataSource");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
 module.exports = async function getPaymentsByWorker(params = {}) {
   try {
@@ -18,6 +19,10 @@ module.exports = async function getPaymentsByWorker(params = {}) {
       startDate,
       // @ts-ignore
       endDate,
+      // @ts-ignore
+      sessionId,
+      // @ts-ignore
+      currentSession = false, // New parameter
       // @ts-ignore
       limit = 50,
       // @ts-ignore
@@ -45,11 +50,12 @@ module.exports = async function getPaymentsByWorker(params = {}) {
 
     const paymentRepository = AppDataSource.getRepository(Payment);
 
-    // Base query: join worker and pitak
+    // Base query: join worker, pitak, and session
     const queryBuilder = paymentRepository
       .createQueryBuilder("payment")
       .leftJoinAndSelect("payment.worker", "worker")
       .leftJoinAndSelect("payment.pitak", "pitak")
+      .leftJoinAndSelect("payment.session", "session") // Added session
       .where("worker.id = :workerId", { workerId });
 
     // Apply filters
@@ -77,6 +83,16 @@ module.exports = async function getPaymentsByWorker(params = {}) {
       queryBuilder.andWhere("pitak.id = :pitakId", { pitakId });
     }
 
+    if (sessionId) {
+      queryBuilder.andWhere("session.id = :sessionId", { sessionId });
+    }
+
+    // Handle current session filter
+    if (currentSession) {
+      const currentSessionId = await farmSessionDefaultSessionId();
+      queryBuilder.andWhere("session.id = :currentSessionId", { currentSessionId });
+    }
+
     // Pagination parsing
     const parsedLimit = Math.max(1, parseInt(limit, 10) || 50);
     const parsedPage = Math.max(1, parseInt(page, 10) || 1);
@@ -95,6 +111,7 @@ module.exports = async function getPaymentsByWorker(params = {}) {
       .createQueryBuilder("payment")
       .leftJoin("payment.worker", "worker")
       .leftJoin("payment.pitak", "pitak")
+      .leftJoin("payment.session", "session") // Added session
       .select([
         "COALESCE(SUM(payment.grossPay), 0) as total_gross",
         "COALESCE(SUM(payment.netPay), 0) as total_net",
@@ -113,6 +130,11 @@ module.exports = async function getPaymentsByWorker(params = {}) {
         endDate: new Date(endDate),
       });
     if (pitakId) summaryQB.andWhere("pitak.id = :pitakId", { pitakId });
+    if (sessionId) summaryQB.andWhere("session.id = :sessionId", { sessionId });
+    if (currentSession) {
+      const currentSessionId = await farmSessionDefaultSessionId();
+      summaryQB.andWhere("session.id = :currentSessionId", { currentSessionId });
+    }
 
     const summary = await summaryQB.getRawOne();
 

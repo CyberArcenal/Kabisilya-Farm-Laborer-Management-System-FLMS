@@ -1,21 +1,24 @@
-// src/ipc/pitak/get/completed.ipc
+// src/ipc/pitak/get/completed.ipc.js
 //@ts-check
 
 const Pitak = require("../../../../entities/Pitak");
 const Assignment = require("../../../../entities/Assignment");
 const Payment = require("../../../../entities/Payment");
 const { AppDataSource } = require("../../../db/dataSource");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
 // @ts-ignore
-// @ts-ignore
-module.exports = async (filters = {}, /** @type {any} */ userId) => {
+module.exports = async (filters = {}, userId) => {
   try {
     const pitakRepo = AppDataSource.getRepository(Pitak);
+    const currentSessionId = await farmSessionDefaultSessionId();
 
     const query = pitakRepo
       .createQueryBuilder("pitak")
       .leftJoinAndSelect("pitak.bukid", "bukid")
-      .where("pitak.status = :status", { status: "completed" });
+      .leftJoinAndSelect("bukid.session", "session")
+      .where("pitak.status = :status", { status: "completed" })
+      .andWhere("session.id = :sessionId", { sessionId: currentSessionId });
 
     // Apply additional filters
     // @ts-ignore
@@ -26,7 +29,6 @@ module.exports = async (filters = {}, /** @type {any} */ userId) => {
 
     // @ts-ignore
     if (filters.location) {
-      // @ts-ignore
       query.andWhere("pitak.location LIKE :location", {
         // @ts-ignore
         location: `%${filters.location}%`,
@@ -69,114 +71,107 @@ module.exports = async (filters = {}, /** @type {any} */ userId) => {
 
     // Get comprehensive harvest data for each pitak
     const harvestedPitaks = await Promise.all(
-      pitaks.map(
-        async (
-         pitak,
-        ) => {
-          const assignmentRepo = AppDataSource.getRepository(Assignment);
-          const paymentRepo = AppDataSource.getRepository(Payment);
+      pitaks.map(async (pitak) => {
+        const assignmentRepo = AppDataSource.getRepository(Assignment);
+        const paymentRepo = AppDataSource.getRepository(Payment);
 
-          // Get assignment statistics
-          const assignmentStats = await assignmentRepo
-            .createQueryBuilder("assignment")
-            .select([
-              "COUNT(*) as totalAssignments",
-              "SUM(assignment.luwangCount) as totalLuWangAssigned",
-              "MIN(assignment.assignmentDate) as firstAssignment",
-              "MAX(assignment.assignmentDate) as lastAssignment",
-            ])
-            .where("assignment.pitakId = :pitakId", { pitakId: pitak.id })
-            .getRawOne();
+        // Get assignment statistics
+        const assignmentStats = await assignmentRepo
+          .createQueryBuilder("assignment")
+          .select([
+            "COUNT(*) as totalAssignments",
+            "SUM(assignment.luwangCount) as totalLuWangAssigned",
+            "MIN(assignment.assignmentDate) as firstAssignment",
+            "MAX(assignment.assignmentDate) as lastAssignment",
+          ])
+          .where("assignment.pitakId = :pitakId", { pitakId: pitak.id })
+          .getRawOne();
 
-          // Get payment statistics
-          const paymentStats = await paymentRepo
-            .createQueryBuilder("payment")
-            .select([
-              "COUNT(*) as totalPayments",
-              "SUM(payment.grossPay) as totalGrossPay",
-              "SUM(payment.netPay) as totalNetPay",
-              "SUM(payment.totalDebtDeduction) as totalDebtDeduction",
-            ])
-            .where("payment.pitakId = :pitakId", { pitakId: pitak.id })
-            .getRawOne();
+        // Get payment statistics
+        const paymentStats = await paymentRepo
+          .createQueryBuilder("payment")
+          .select([
+            "COUNT(*) as totalPayments",
+            "SUM(payment.grossPay) as totalGrossPay",
+            "SUM(payment.netPay) as totalNetPay",
+            "SUM(payment.totalDebtDeduction) as totalDebtDeduction",
+          ])
+          .where("payment.pitakId = :pitakId", { pitakId: pitak.id })
+          .getRawOne();
 
-          // Calculate harvest metrics
-          const totalLuWangAssigned =
-            parseFloat(assignmentStats.totalLuWangAssigned) || 0;
+        // Calculate harvest metrics
+        const totalLuWangAssigned =
+          parseFloat(assignmentStats.totalLuWangAssigned) || 0;
+        // @ts-ignore
+        const totalLuWangCapacity = parseFloat(pitak.totalLuwang);
+        const utilizationRate =
+          totalLuWangCapacity > 0
+            ? (totalLuWangAssigned / totalLuWangCapacity) * 100
+            : 0;
+
+        // Calculate harvest efficiency
+        const totalNetPay = parseFloat(paymentStats.totalNetPay) || 0;
+        const revenuePerLuWang =
+          totalLuWangAssigned > 0 ? totalNetPay / totalLuWangAssigned : 0;
+
+        // Calculate harvest duration
+        const firstAssignment = assignmentStats.firstAssignment;
+        const lastAssignment = assignmentStats.lastAssignment;
+        let harvestDuration = null;
+
+        if (firstAssignment && lastAssignment) {
+          const start = new Date(firstAssignment);
+          const end = new Date(lastAssignment);
           // @ts-ignore
-          const totalLuWangCapacity = parseFloat(pitak.totalLuwang);
-          const utilizationRate =
-            totalLuWangCapacity > 0
-              ? (totalLuWangAssigned / totalLuWangCapacity) * 100
-              : 0;
-
-          // Calculate harvest efficiency
-          const totalNetPay = parseFloat(paymentStats.totalNetPay) || 0;
-          const revenuePerLuWang =
-            totalLuWangAssigned > 0 ? totalNetPay / totalLuWangAssigned : 0;
-
-          // Calculate harvest duration
-          const firstAssignment = assignmentStats.firstAssignment;
-          const lastAssignment = assignmentStats.lastAssignment;
-          let harvestDuration = null;
-
-          if (firstAssignment && lastAssignment) {
-            const start = new Date(firstAssignment);
-            const end = new Date(lastAssignment);
-            // @ts-ignore
-            const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
-            harvestDuration = {
-              days: diffDays,
-              start: start,
-              end: end,
-            };
-          }
-
-          return {
-            id: pitak.id,
-            location: pitak.location,
-            totalLuWangCapacity,
-            // @ts-ignore
-            bukid: pitak.bukid
-              ? {
-                  // @ts-ignore
-                  id: pitak.bukid.id,
-                  // @ts-ignore
-                  name: pitak.bukid.name,
-                  // @ts-ignore
-                  location: pitak.bukid.location,
-                  // @ts-ignore
-                  kabisilya: pitak.bukid.kabisilya,
-                }
-              : null,
-            harvestData: {
-              harvestedAt: pitak.updatedAt,
-              totalAssignments: parseInt(assignmentStats.totalAssignments) || 0,
-              totalLuWangAssigned,
-              utilizationRate,
-              totalPayments: parseInt(paymentStats.totalPayments) || 0,
-              totalGrossPay: parseFloat(paymentStats.totalGrossPay) || 0,
-              totalNetPay,
-              totalDebtDeduction:
-                parseFloat(paymentStats.totalDebtDeduction) || 0,
-              revenuePerLuWang,
-              harvestDuration,
-              firstAssignment: assignmentStats.firstAssignment,
-              lastAssignment: assignmentStats.lastAssignment,
-            },
-            createdAt: pitak.createdAt,
-            updatedAt: pitak.updatedAt,
+          const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+          harvestDuration = {
+            days: diffDays,
+            start: start,
+            end: end,
           };
-        },
-      ),
+        }
+
+        return {
+          id: pitak.id,
+          location: pitak.location,
+          totalLuWangCapacity,
+          // @ts-ignore
+          bukid: pitak.bukid
+            ? {
+                // @ts-ignore
+                id: pitak.bukid.id,
+                // @ts-ignore
+                name: pitak.bukid.name,
+                // @ts-ignore
+                location: pitak.bukid.location,
+                // @ts-ignore
+                kabisilya: pitak.bukid.kabisilya,
+              }
+            : null,
+          harvestData: {
+            harvestedAt: pitak.updatedAt,
+            totalAssignments: parseInt(assignmentStats.totalAssignments) || 0,
+            totalLuWangAssigned,
+            utilizationRate,
+            totalPayments: parseInt(paymentStats.totalPayments) || 0,
+            totalGrossPay: parseFloat(paymentStats.totalGrossPay) || 0,
+            totalNetPay,
+            totalDebtDeduction:
+              parseFloat(paymentStats.totalDebtDeduction) || 0,
+            revenuePerLuWang,
+            harvestDuration,
+            firstAssignment: assignmentStats.firstAssignment,
+            lastAssignment: assignmentStats.lastAssignment,
+          },
+          createdAt: pitak.createdAt,
+          updatedAt: pitak.updatedAt,
+        };
+      }),
     );
 
     // Calculate harvest summary statistics
     const summary = harvestedPitaks.reduce(
-      (
-        /** @type {{ totalPitaks: number; totalLuWangCapacity: any; totalLuWangHarvested: any; totalGrossRevenue: any; totalNetRevenue: any; totalAssignments: any; totalPayments: any; averageUtilization: any; averageRevenuePerLuWang: any; bestRevenuePerLuWang: number; bestPerformingPitakId: any; highestUtilization: number; mostUtilizedPitakId: any; }} */ stats,
-        /** @type {{ totalLuWangCapacity: any; harvestData: { totalLuWangAssigned: any; totalGrossPay: any; totalNetPay: any; totalAssignments: any; totalPayments: any; utilizationRate: number; revenuePerLuWang: number; }; id: any; }} */ pitak,
-      ) => {
+      (stats, pitak) => {
         stats.totalPitaks++;
         stats.totalLuWangCapacity += pitak.totalLuWangCapacity;
         stats.totalLuWangHarvested += pitak.harvestData.totalLuWangAssigned;
@@ -192,12 +187,14 @@ module.exports = async (filters = {}, /** @type {any} */ userId) => {
         // Track best performing pitak
         if (pitak.harvestData.revenuePerLuWang > stats.bestRevenuePerLuWang) {
           stats.bestRevenuePerLuWang = pitak.harvestData.revenuePerLuWang;
+          // @ts-ignore
           stats.bestPerformingPitakId = pitak.id;
         }
 
         // Track highest utilization
         if (pitak.harvestData.utilizationRate > stats.highestUtilization) {
           stats.highestUtilization = pitak.harvestData.utilizationRate;
+          // @ts-ignore
           stats.mostUtilizedPitakId = pitak.id;
         }
 
@@ -246,6 +243,7 @@ module.exports = async (filters = {}, /** @type {any} */ userId) => {
         totalPages: Math.ceil(total / limit),
         summary,
         filters,
+        sessionId: currentSessionId,
       },
     };
   } catch (error) {

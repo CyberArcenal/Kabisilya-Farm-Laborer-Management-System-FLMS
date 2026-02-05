@@ -32,7 +32,7 @@ module.exports = async function getPaymentWithDetails(params = {}) {
 
     const paymentRepository = AppDataSource.getRepository(Payment);
 
-    // Get payment with related data
+    // Get payment with related data including session
     const payment = await paymentRepository.findOne({
       where: { id: paymentId },
       relations: [
@@ -43,7 +43,7 @@ module.exports = async function getPaymentWithDetails(params = {}) {
         "debtPayments",
         "debtPayments.debt",
         "assignment",
-        "session",
+        "session", // Already included
       ],
     });
 
@@ -247,7 +247,16 @@ module.exports = async function getPaymentWithDetails(params = {}) {
         // @ts-ignore
         assignment: payment.assignment ? { id: payment.assignment.id } : null,
         // @ts-ignore
-        session: payment.session ? { id: payment.session.id } : null,
+        session: payment.session ? { 
+          // @ts-ignore
+          id: payment.session.id,
+          // @ts-ignore
+          name: payment.session.name || null,
+          // @ts-ignore
+          year: payment.session.year || null,
+          // @ts-ignore
+          status: payment.session.status || null
+        } : null,
       },
       worker: worker
         ? {

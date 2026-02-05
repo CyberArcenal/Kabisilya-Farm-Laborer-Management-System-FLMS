@@ -3,6 +3,7 @@
 
 const Payment = require("../../../../entities/Payment");
 const { AppDataSource } = require("../../../db/dataSource");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
 module.exports = async function getPaymentsByStatus(params = {}) {
   try {
@@ -13,6 +14,10 @@ module.exports = async function getPaymentsByStatus(params = {}) {
       startDate,
       // @ts-ignore
       endDate,
+      // @ts-ignore
+      sessionId,
+      // @ts-ignore
+      currentSession = false, // New parameter
       // @ts-ignore
       limit = 50,
       // @ts-ignore
@@ -43,11 +48,12 @@ module.exports = async function getPaymentsByStatus(params = {}) {
 
     const paymentRepository = AppDataSource.getRepository(Payment);
 
-    // Base query: join worker and pitak
+    // Base query: join worker, pitak, and session
     const queryBuilder = paymentRepository
       .createQueryBuilder("payment")
       .leftJoinAndSelect("payment.worker", "worker")
       .leftJoinAndSelect("payment.pitak", "pitak")
+      .leftJoinAndSelect("payment.session", "session") // Added session
       .where("payment.status = :status", { status });
 
     // Apply date filters
@@ -61,6 +67,16 @@ module.exports = async function getPaymentsByStatus(params = {}) {
       queryBuilder.andWhere("payment.createdAt <= :endDate", {
         endDate: new Date(endDate),
       });
+    }
+
+    if (sessionId) {
+      queryBuilder.andWhere("session.id = :sessionId", { sessionId });
+    }
+
+    // Handle current session filter
+    if (currentSession) {
+      const currentSessionId = await farmSessionDefaultSessionId();
+      queryBuilder.andWhere("session.id = :currentSessionId", { currentSessionId });
     }
 
     // Pagination parsing
@@ -92,6 +108,7 @@ module.exports = async function getPaymentsByStatus(params = {}) {
     // Build insights query with same filters
     const insightsQB = paymentRepository
       .createQueryBuilder("payment")
+      .leftJoin("payment.session", "session") // Added session
       .select([
         "COUNT(payment.id) as total_count",
         "COALESCE(SUM(payment.netPay), 0) as total_amount",
@@ -103,6 +120,11 @@ module.exports = async function getPaymentsByStatus(params = {}) {
 
     if (startDate) insightsQB.andWhere("payment.createdAt >= :startDate", { startDate: new Date(startDate) });
     if (endDate) insightsQB.andWhere("payment.createdAt <= :endDate", { endDate: new Date(endDate) });
+    if (sessionId) insightsQB.andWhere("session.id = :sessionId", { sessionId });
+    if (currentSession) {
+      const currentSessionId = await farmSessionDefaultSessionId();
+      insightsQB.andWhere("session.id = :currentSessionId", { currentSessionId });
+    }
 
     const insights = await insightsQB.getRawOne();
 
@@ -110,6 +132,7 @@ module.exports = async function getPaymentsByStatus(params = {}) {
     const workerDistributionQB = paymentRepository
       .createQueryBuilder("payment")
       .leftJoin("payment.worker", "worker")
+      .leftJoin("payment.session", "session") // Added session
       .select([
         "worker.id as worker_id",
         "worker.name as worker_name",
@@ -120,6 +143,11 @@ module.exports = async function getPaymentsByStatus(params = {}) {
 
     if (startDate) workerDistributionQB.andWhere("payment.createdAt >= :startDate", { startDate: new Date(startDate) });
     if (endDate) workerDistributionQB.andWhere("payment.createdAt <= :endDate", { endDate: new Date(endDate) });
+    if (sessionId) workerDistributionQB.andWhere("session.id = :sessionId", { sessionId });
+    if (currentSession) {
+      const currentSessionId = await farmSessionDefaultSessionId();
+      workerDistributionQB.andWhere("session.id = :currentSessionId", { currentSessionId });
+    }
 
     workerDistributionQB.groupBy("worker.id, worker.name").orderBy("total_paid", "DESC").limit(10);
     const workerDistributionRaw = await workerDistributionQB.getRawMany();
@@ -127,6 +155,7 @@ module.exports = async function getPaymentsByStatus(params = {}) {
     // Monthly trend for SQLite using strftime
     const monthlyTrendQB = paymentRepository
       .createQueryBuilder("payment")
+      .leftJoin("payment.session", "session") // Added session
       .select([
         "strftime('%Y', payment.createdAt) as year",
         "strftime('%m', payment.createdAt) as month",
@@ -137,6 +166,11 @@ module.exports = async function getPaymentsByStatus(params = {}) {
 
     if (startDate) monthlyTrendQB.andWhere("payment.createdAt >= :startDate", { startDate: new Date(startDate) });
     if (endDate) monthlyTrendQB.andWhere("payment.createdAt <= :endDate", { endDate: new Date(endDate) });
+    if (sessionId) monthlyTrendQB.andWhere("session.id = :sessionId", { sessionId });
+    if (currentSession) {
+      const currentSessionId = await farmSessionDefaultSessionId();
+      monthlyTrendQB.andWhere("session.id = :currentSessionId", { currentSessionId });
+    }
 
     monthlyTrendQB
       .groupBy("strftime('%Y', payment.createdAt), strftime('%m', payment.createdAt)")

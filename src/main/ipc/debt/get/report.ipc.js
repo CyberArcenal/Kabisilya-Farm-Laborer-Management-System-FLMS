@@ -20,6 +20,7 @@ module.exports = async (dateRange = {}, filters = {}, /** @type {any} */ userId)
     // Base query
     const query = debtRepository.createQueryBuilder("debt")
       .leftJoinAndSelect("debt.worker", "worker")
+      .leftJoinAndSelect("debt.session", "session")
       .leftJoinAndSelect("debt.histories", "history")
       .where("debt.dateIncurred BETWEEN :startDate AND :endDate", {
         startDate: queryStartDate,

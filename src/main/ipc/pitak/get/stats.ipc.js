@@ -1,16 +1,21 @@
-// src/ipc/pitak/get/stats.ipc (Simplified Version)
+// src/ipc/pitak/get/stats.ipc.js
 //@ts-check
 
 const Pitak = require("../../../../entities/Pitak");
 const { AppDataSource } = require("../../../db/dataSource");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
-module.exports = async (dateRange = {}, /** @type {any} */ userId) => {
+// @ts-ignore
+module.exports = async (dateRange = {}, userId) => {
   try {
     const pitakRepo = AppDataSource.getRepository(Pitak);
+    const currentSessionId = await farmSessionDefaultSessionId();
 
-    // Get basic statistics
+    // Get basic statistics with session filter
     const stats = await pitakRepo
       .createQueryBuilder("pitak")
+      .leftJoin("pitak.bukid", "bukid")
+      .leftJoin("bukid.session", "session")
       .select([
         "COUNT(*) as total",
         'SUM(CASE WHEN pitak.status = "active" THEN 1 ELSE 0 END) as active',
@@ -21,14 +26,17 @@ module.exports = async (dateRange = {}, /** @type {any} */ userId) => {
         "MIN(pitak.totalLuwang) as minLuWang",
         "MAX(pitak.totalLuwang) as maxLuWang",
       ])
+      .where("session.id = :sessionId", { sessionId: currentSessionId })
       .getRawOne();
 
-    // Get bukid distribution
+    // Get bukid distribution with session filter
     const bukidStats = await pitakRepo
       .createQueryBuilder("pitak")
       .leftJoin("pitak.bukid", "bukid")
+      .leftJoin("bukid.session", "session")
       .select("bukid.name", "bukidName")
       .addSelect("COUNT(pitak.id)", "pitakCount")
+      .where("session.id = :sessionId", { sessionId: currentSessionId })
       .groupBy("bukid.name")
       .getRawMany();
 
@@ -48,6 +56,9 @@ module.exports = async (dateRange = {}, /** @type {any} */ userId) => {
           bukidName: b.bukidName,
           pitakCount: parseInt(b.pitakCount) || 0,
         })),
+      },
+      meta: {
+        sessionId: currentSessionId,
       },
     };
   } catch (error) {

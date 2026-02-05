@@ -1,10 +1,11 @@
 // src/ipc/assignment/get/by_status.ipc.js
 //@ts-check
 const Assignment = require("../../../../entities/Assignment");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 const { AppDataSource } = require("../../../db/dataSource");
 
 /**
- * Get assignments by status
+ * Get assignments by status scoped to current session
  * @param {string} status - Assignment status (active/completed/cancelled)
  * @param {Object} filters - Additional filters
  * @param {number} userId - User ID for logging
@@ -14,85 +15,102 @@ const { AppDataSource } = require("../../../db/dataSource");
 module.exports = async (status, filters = {}, userId) => {
   try {
     // Validate status
-    const validStatuses = ['active', 'completed', 'cancelled'];
+    const validStatuses = ["active", "completed", "cancelled"];
     if (!validStatuses.includes(status)) {
       return {
         status: false,
-        message: "Invalid status. Must be one of: active, completed, cancelled",
-        data: null
+        message: "Invalid status",
+        data: { errors: [`Must be one of: ${validStatuses.join(", ")}`] }
       };
     }
 
     const assignmentRepo = AppDataSource.getRepository(Assignment);
-    
+    const currentSessionId = await farmSessionDefaultSessionId();
+
     const queryBuilder = assignmentRepo
       .createQueryBuilder("assignment")
       .leftJoinAndSelect("assignment.worker", "worker")
       .leftJoinAndSelect("assignment.pitak", "pitak")
+      .leftJoinAndSelect("assignment.session", "session")
       .where("assignment.status = :status", { status })
+      .andWhere("session.id = :sessionId", { sessionId: currentSessionId })
       .orderBy("assignment.assignmentDate", "DESC");
 
     // Apply additional filters
     // @ts-ignore
     if (filters.dateFrom && filters.dateTo) {
-      queryBuilder.andWhere("assignment.assignmentDate BETWEEN :dateFrom AND :dateTo", {
+      queryBuilder.andWhere(
+        "assignment.assignmentDate BETWEEN :dateFrom AND :dateTo",
         // @ts-ignore
-        dateFrom: filters.dateFrom,
-        // @ts-ignore
-        dateTo: filters.dateTo
-      });
+        { dateFrom: filters.dateFrom, dateTo: filters.dateTo }
+      );
     }
 
     // @ts-ignore
     if (filters.workerId) {
       // @ts-ignore
-      queryBuilder.andWhere("assignment.workerId = :workerId", { workerId: filters.workerId });
+      queryBuilder.andWhere("worker.id = :workerId", { workerId: filters.workerId });
+    }
+
+    // @ts-ignore
+    if (filters.pitakId) {
+      // @ts-ignore
+      queryBuilder.andWhere("pitak.id = :pitakId", { pitakId: filters.pitakId });
     }
 
     const assignments = await queryBuilder.getMany();
-    
+
     // Calculate summary
-    const totalLuWang = assignments.reduce((/** @type {number} */ sum, /** @type {{ luwangCount: any; }} */ assignment) => 
-      sum + parseFloat(assignment.luwangCount || 0), 0);
+    const totalLuWang = assignments.reduce(
+      // @ts-ignore
+      (sum, assignment) => sum + parseFloat(assignment.luwangCount || 0),
+      0
+    );
 
     return {
       status: true,
       message: `Assignments with status '${status}' retrieved successfully`,
-      data: assignments.map((/** @type {{ id: any; luwangCount: string; assignmentDate: any; status: any; notes: any; worker: { id: any; name: any; }; pitak: { id: any; name: any; }; }} */ assignment) => ({
+      data: assignments.map((assignment) => ({
         id: assignment.id,
-        luwangCount: parseFloat(assignment.luwangCount),
+        // @ts-ignore
+        luwangCount: parseFloat(assignment.luwangCount).toFixed(2),
         assignmentDate: assignment.assignmentDate,
         status: assignment.status,
         notes: assignment.notes,
-        worker: assignment.worker ? {
-          id: assignment.worker.id,
-          name: assignment.worker.name
-        } : null,
-        pitak: assignment.pitak ? {
-          id: assignment.pitak.id,
-          name: assignment.pitak.name
-        } : null
+        // @ts-ignore
+        worker: assignment.worker
+          // @ts-ignore
+          ? { id: assignment.worker.id, name: assignment.worker.name }
+          : null,
+        // @ts-ignore
+        pitak: assignment.pitak
+          // @ts-ignore
+          ? { id: assignment.pitak.id, name: assignment.pitak.name }
+          : null
       })),
       meta: {
         total: assignments.length,
         totalLuWang: totalLuWang.toFixed(2),
+        dateRange:
+          // @ts-ignore
+          filters.dateFrom && filters.dateTo
+            // @ts-ignore
+            ? { from: filters.dateFrom, to: filters.dateTo }
+            : null,
+        sessionId: currentSessionId,
         // @ts-ignore
-        dateRange: filters.dateFrom && filters.dateTo ? {
-          // @ts-ignore
-          from: filters.dateFrom,
-          // @ts-ignore
-          to: filters.dateTo
-        } : null
+        uniqueWorkers: new Set(assignments.map((a) => a.worker?.id)).size,
+        // @ts-ignore
+        uniquePitaks: new Set(assignments.map((a) => a.pitak?.id)).size
       }
     };
-
   } catch (error) {
     console.error(`Error getting assignments by status (${status}):`, error);
     return {
       status: false,
+      message: "Failed to retrieve assignments",
       // @ts-ignore
-      message: `Failed to retrieve assignments: ${error.message}`,
-      data: null
+      data: { errors: [error.message || String(error)] }
     };
   }
 };

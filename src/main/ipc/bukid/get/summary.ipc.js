@@ -3,11 +3,19 @@
 
 const { AppDataSource } = require("../../../db/dataSource");
 const Bukid = require("../../../../entities/Bukid");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
+/**
+ * Get bukid summary scoped to current session
+ * @param {Object} params - Parameters
+ * @param {number} params.id - Bukid ID
+ * @param {number} params._userId - User ID for logging
+ * @returns {Promise<Object>} Response object
+ */
+// @ts-ignore
 module.exports = async function getBukidSummary(params = {}) {
   try {
     const bukidRepository = AppDataSource.getRepository(Bukid);
-    // @ts-ignore
     // @ts-ignore
     const { id, _userId } = params;
     
@@ -19,15 +27,22 @@ module.exports = async function getBukidSummary(params = {}) {
       };
     }
 
+    // Get current session ID
+    const currentSessionId = await farmSessionDefaultSessionId();
+
     const bukid = await bukidRepository.findOne({
-      where: { id },
+      where: { 
+        id,
+        // @ts-ignore
+        session: { id: currentSessionId }
+      },
       relations: ['pitaks', 'pitaks.assignments']
     });
 
     if (!bukid) {
       return {
         status: false,
-        message: 'Bukid not found',
+        message: 'Bukid not found in current session',
         data: null
       };
     }
@@ -41,14 +56,15 @@ module.exports = async function getBukidSummary(params = {}) {
       // @ts-ignore
       pitakCount: bukid.pitaks?.length || 0,
       // @ts-ignore
-      totalLuwang: bukid.pitaks?.reduce((/** @type {number} */ sum, /** @type {{ totalLuwang: any; }} */ pitak) => 
+      totalLuwang: bukid.pitaks?.reduce((sum, pitak) => 
         sum + parseFloat(pitak.totalLuwang || 0), 0) || 0,
       // @ts-ignore
-      assignmentCount: bukid.pitaks?.reduce((/** @type {any} */ sum, /** @type {{ assignments: string | any[]; }} */ pitak) => 
+      assignmentCount: bukid.pitaks?.reduce((sum, pitak) => 
         sum + (pitak.assignments?.length || 0), 0) || 0,
       // @ts-ignore
-      activeAssignments: bukid.pitaks?.reduce((/** @type {any} */ sum, /** @type {{ assignments: { filter: (arg0: (a: any) => boolean) => { (): any; new (): any; length: any; }; }; }} */ pitak) => 
-        sum + (pitak.assignments?.filter((/** @type {{ status: string; }} */ a) => a.status === 'active')?.length || 0), 0) || 0,
+      activeAssignments: bukid.pitaks?.reduce((sum, pitak) => 
+        // @ts-ignore
+        sum + (pitak.assignments?.filter(a => a.status === 'active')?.length || 0), 0) || 0,
       createdAt: bukid.createdAt,
       updatedAt: bukid.updatedAt
     };

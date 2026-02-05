@@ -4,15 +4,20 @@
 const Pitak = require("../../../../entities/Pitak");
 const Assignment = require("../../../../entities/Assignment");
 const { AppDataSource } = require("../../../db/dataSource");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
 // @ts-ignore
 module.exports = async (filters = {}, userId) => {
   try {
     const pitakRepo = AppDataSource.getRepository(Pitak);
+    const currentSessionId = await farmSessionDefaultSessionId();
 
-    const query = pitakRepo.createQueryBuilder("pitak")
+    const query = pitakRepo
+      .createQueryBuilder("pitak")
       .leftJoinAndSelect("pitak.bukid", "bukid")
-      .where("pitak.status = :status", { status: "active" });
+      .leftJoinAndSelect("bukid.session", "session")
+      .where("pitak.status = :status", { status: "active" })
+      .andWhere("session.id = :sessionId", { sessionId: currentSessionId });
 
     // Filters
     // @ts-ignore
@@ -22,18 +27,24 @@ module.exports = async (filters = {}, userId) => {
     }
     // @ts-ignore
     if (filters.location) {
-      // @ts-ignore
-      query.andWhere("pitak.location LIKE :location", { location: `%${filters.location}%` });
+      query.andWhere("pitak.location LIKE :location", {
+        // @ts-ignore
+        location: `%${filters.location}%`,
+      });
     }
     // @ts-ignore
     if (filters.minLuwang) {
-      // @ts-ignore
-      query.andWhere("pitak.totalLuwang >= :minLuwang", { minLuwang: filters.minLuwang });
+      query.andWhere("pitak.totalLuwang >= :minLuwang", {
+        // @ts-ignore
+        minLuwang: filters.minLuwang,
+      });
     }
     // @ts-ignore
     if (filters.maxLuwang) {
-      // @ts-ignore
-      query.andWhere("pitak.totalLuwang <= :maxLuwang", { maxLuwang: filters.maxLuwang });
+      query.andWhere("pitak.totalLuwang <= :maxLuwang", {
+        // @ts-ignore
+        maxLuwang: filters.maxLuwang,
+      });
     }
 
     // Sorting
@@ -57,10 +68,19 @@ module.exports = async (filters = {}, userId) => {
     const assignmentRepo = AppDataSource.getRepository(Assignment);
     const assignmentStatsRaw = await assignmentRepo
       .createQueryBuilder("assignment")
+      .leftJoin("assignment.pitak", "pitak")
+      .leftJoin("pitak.bukid", "bukid")
+      .leftJoin("bukid.session", "session")
       .select("assignment.pitakId", "pitakId")
-      .addSelect("COALESCE(SUM(assignment.luwangCount),0)", "totalAssignedLuwang")
+      .addSelect(
+        "COALESCE(SUM(assignment.luwangCount),0)",
+        "totalAssignedLuwang",
+      )
       .addSelect("COUNT(*)", "totalAssignments")
-      .where("assignment.status IN (:...statuses)", { statuses: ["active", "completed"] })
+      .where("assignment.status IN (:...statuses)", {
+        statuses: ["active", "completed"],
+      })
+      .andWhere("session.id = :sessionId", { sessionId: currentSessionId })
       .groupBy("assignment.pitakId")
       .getRawMany();
 
@@ -73,20 +93,27 @@ module.exports = async (filters = {}, userId) => {
     }, {});
 
     // Merge stats into pitaks
-    const pitaksWithAvailability = pitaks.map(p => {
+    const pitaksWithAvailability = pitaks.map((p) => {
       // @ts-ignore
-      const stats = statsMap[p.id] || { totalAssignedLuwang: 0, totalAssignments: 0 };
+      const stats = statsMap[p.id] || {
+        totalAssignedLuwang: 0,
+        totalAssignments: 0,
+      };
       // @ts-ignore
       const totalLuWang = parseFloat(p.totalLuwang);
       const remainingLuWang = totalLuWang - stats.totalAssignedLuwang;
-      const utilizationRate = totalLuWang > 0 ? (stats.totalAssignedLuwang / totalLuWang) * 100 : 0;
+      const utilizationRate =
+        totalLuWang > 0 ? (stats.totalAssignedLuwang / totalLuWang) * 100 : 0;
 
       return {
         id: p.id,
         location: p.location,
         totalLuwang: totalLuWang,
         // @ts-ignore
-        bukid: p.bukid ? { id: p.bukid.id, name: p.bukid.name, location: p.bukid.location } : null,
+        bukid: p.bukid
+          // @ts-ignore
+          ? { id: p.bukid.id, name: p.bukid.name, location: p.bukid.location }
+          : null,
         availability: {
           totalAssignedLuwang: stats.totalAssignedLuwang,
           remainingLuWang,
@@ -100,27 +127,31 @@ module.exports = async (filters = {}, userId) => {
     });
 
     // Summary
-    const summary = pitaksWithAvailability.reduce((s, pitak) => {
-      s.totalPitaks++;
-      s.totalLuwangCapacity += pitak.totalLuwang;
-      s.totalAssignedLuwang += pitak.availability.totalAssignedLuwang;
-      s.totalRemainingLuwang += pitak.availability.remainingLuWang;
-      s.availablePitaks += pitak.availability.isAvailable ? 1 : 0;
-      s.totalAssignments += pitak.availability.assignmentCount;
-      return s;
-    }, {
-      totalPitaks: 0,
-      totalLuwangCapacity: 0,
-      totalAssignedLuwang: 0,
-      totalRemainingLuwang: 0,
-      availablePitaks: 0,
-      totalAssignments: 0,
-    });
+    const summary = pitaksWithAvailability.reduce(
+      (s, pitak) => {
+        s.totalPitaks++;
+        s.totalLuwangCapacity += pitak.totalLuwang;
+        s.totalAssignedLuwang += pitak.availability.totalAssignedLuwang;
+        s.totalRemainingLuwang += pitak.availability.remainingLuWang;
+        s.availablePitaks += pitak.availability.isAvailable ? 1 : 0;
+        s.totalAssignments += pitak.availability.assignmentCount;
+        return s;
+      },
+      {
+        totalPitaks: 0,
+        totalLuwangCapacity: 0,
+        totalAssignedLuwang: 0,
+        totalRemainingLuwang: 0,
+        availablePitaks: 0,
+        totalAssignments: 0,
+      },
+    );
 
     // @ts-ignore
-    summary.overallUtilizationRate = summary.totalLuwangCapacity > 0
-      ? (summary.totalAssignedLuwang / summary.totalLuwangCapacity) * 100
-      : 0;
+    summary.overallUtilizationRate =
+      summary.totalLuwangCapacity > 0
+        ? (summary.totalAssignedLuwang / summary.totalLuwangCapacity) * 100
+        : 0;
 
     return {
       status: true,

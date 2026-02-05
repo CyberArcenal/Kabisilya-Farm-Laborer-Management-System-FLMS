@@ -1,18 +1,14 @@
-// src/ipc/pitak/get/report.ipc
+// src/ipc/pitak/get/report.ipc.js
 //@ts-check
 
 const Pitak = require("../../../../entities/Pitak");
 const Assignment = require("../../../../entities/Assignment");
 const Payment = require("../../../../entities/Payment");
 const { AppDataSource } = require("../../../db/dataSource");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
 // @ts-ignore
-module.exports = async (
-  dateRange = {},
-  filters = {},
-  // @ts-ignore
-  /** @type {any} */ userId,
-) => {
+module.exports = async (dateRange = {}, filters = {}, userId) => {
   try {
     // @ts-ignore
     const { startDate, endDate } = dateRange;
@@ -28,16 +24,18 @@ module.exports = async (
     const pitakRepo = AppDataSource.getRepository(Pitak);
     const assignmentRepo = AppDataSource.getRepository(Assignment);
     const paymentRepo = AppDataSource.getRepository(Payment);
+    const currentSessionId = await farmSessionDefaultSessionId();
 
-    // Build base query for pitaks
+    // Build base query for pitaks with session filter
     const pitakQuery = pitakRepo
       .createQueryBuilder("pitak")
       .leftJoinAndSelect("pitak.bukid", "bukid")
+      .leftJoinAndSelect("bukid.session", "session")
+      .where("session.id = :sessionId", { sessionId: currentSessionId });
 
     // Apply filters
     // @ts-ignore
     if (filters.bukidId) {
-      // @ts-ignore
       pitakQuery.andWhere("pitak.bukidId = :bukidId", {
         // @ts-ignore
         bukidId: filters.bukidId,
@@ -54,201 +52,172 @@ module.exports = async (
 
     // Generate detailed report for each pitak
     const reportData = await Promise.all(
-      pitaks.map(
-        async (
-          pitak,
-        ) => {
-          // Get assignments within date range
-          const assignmentsQuery = assignmentRepo
-            .createQueryBuilder("assignment")
-            .leftJoinAndSelect("assignment.worker", "worker")
-            .where("assignment.pitakId = :pitakId", { pitakId: pitak.id })
-            .andWhere(
-              "assignment.assignmentDate BETWEEN :startDate AND :endDate",
-              {
-                startDate: new Date(startDate),
-                endDate: new Date(endDate),
-              },
-            );
-
-          // @ts-ignore
-          if (filters.workerId) {
-            // @ts-ignore
-            assignmentsQuery.andWhere("assignment.workerId = :workerId", {
-              // @ts-ignore
-              workerId: filters.workerId,
-            });
-          }
-
-          const assignments = await assignmentsQuery.getMany();
-
-          // Get payments within date range
-          const paymentsQuery = paymentRepo
-            .createQueryBuilder("payment")
-            .leftJoinAndSelect("payment.worker", "worker")
-            .where("payment.pitakId = :pitakId", { pitakId: pitak.id })
-            .andWhere("payment.paymentDate BETWEEN :startDate AND :endDate", {
+      pitaks.map(async (pitak) => {
+        // Get assignments within date range with session filter
+        const assignmentsQuery = assignmentRepo
+          .createQueryBuilder("assignment")
+          .leftJoinAndSelect("assignment.worker", "worker")
+          .innerJoin("assignment.pitak", "pitak")
+          .innerJoin("pitak.bukid", "bukid")
+          .innerJoin("bukid.session", "session")
+          .where("assignment.pitakId = :pitakId", { pitakId: pitak.id })
+          .andWhere("session.id = :sessionId", { sessionId: currentSessionId })
+          .andWhere(
+            "assignment.assignmentDate BETWEEN :startDate AND :endDate",
+            {
               startDate: new Date(startDate),
               endDate: new Date(endDate),
-            });
+            },
+          );
 
-          // @ts-ignore
-          if (filters.workerId) {
+        // @ts-ignore
+        if (filters.workerId) {
+          assignmentsQuery.andWhere("assignment.workerId = :workerId", {
             // @ts-ignore
-            paymentsQuery.andWhere("payment.workerId = :workerId", {
-              // @ts-ignore
-              workerId: filters.workerId,
-            });
-          }
+            workerId: filters.workerId,
+          });
+        }
 
-          const payments = await paymentsQuery.getMany();
+        const assignments = await assignmentsQuery.getMany();
 
-          // Calculate metrics
-          const assignmentStats = assignments.reduce(
-            (
-             assignment,
-            ) => {
-              // @ts-ignore
-              stats.totalLuWang += parseFloat(assignment.luwangCount) || 0;
-              // @ts-ignore
-              stats.completedCount += assignment.status === "completed" ? 1 : 0;
-              // @ts-ignore
-              stats.activeCount += assignment.status === "active" ? 1 : 0;
-              // @ts-ignore
-              stats.cancelledCount += assignment.status === "cancelled" ? 1 : 0;
-              // @ts-ignore
-              return stats;
-            },
-            {
-              totalAssignments: assignments.length,
-              totalLuWang: 0,
-              completedCount: 0,
-              activeCount: 0,
-              cancelledCount: 0,
-            },
-          );
+        // Get payments within date range with session filter
+        const paymentsQuery = paymentRepo
+          .createQueryBuilder("payment")
+          .leftJoinAndSelect("payment.worker", "worker")
+          .innerJoin("payment.pitak", "pitak")
+          .innerJoin("pitak.bukid", "bukid")
+          .innerJoin("bukid.session", "session")
+          .where("payment.pitakId = :pitakId", { pitakId: pitak.id })
+          .andWhere("session.id = :sessionId", { sessionId: currentSessionId })
+          .andWhere("payment.paymentDate BETWEEN :startDate AND :endDate", {
+            startDate: new Date(startDate),
+            endDate: new Date(endDate),
+          });
 
-          const paymentStats = payments.reduce(
-            (
-            payment,
-            ) => {
-              // @ts-ignore
-              stats.totalGrossPay += parseFloat(payment.grossPay) || 0;
-              // @ts-ignore
-              stats.totalNetPay += parseFloat(payment.netPay) || 0;
-              // @ts-ignore
-              stats.totalDebtDeduction +=
-                // @ts-ignore
-                parseFloat(payment.totalDebtDeduction) || 0;
-              // @ts-ignore
-              stats.completedCount += payment.status === "completed" ? 1 : 0;
-              // @ts-ignore
-              return stats;
-            },
-            {
-              totalPayments: payments.length,
-              totalGrossPay: 0,
-              totalNetPay: 0,
-              totalDebtDeduction: 0,
-              completedCount: 0,
-            },
-          );
+        // @ts-ignore
+        if (filters.workerId) {
+          paymentsQuery.andWhere("payment.workerId = :workerId", {
+            // @ts-ignore
+            workerId: filters.workerId,
+          });
+        }
 
-          return {
-            pitak: {
-              id: pitak.id,
-              location: pitak.location,
+        const payments = await paymentsQuery.getMany();
+
+        // Calculate metrics
+        const assignmentStats = assignments.reduce(
+          (stats, assignment) => {
+            // @ts-ignore
+            stats.totalLuWang += parseFloat(assignment.luwangCount) || 0;
+            stats.completedCount += assignment.status === "completed" ? 1 : 0;
+            stats.activeCount += assignment.status === "active" ? 1 : 0;
+            stats.cancelledCount += assignment.status === "cancelled" ? 1 : 0;
+            return stats;
+          },
+          {
+            totalAssignments: assignments.length,
+            totalLuWang: 0,
+            completedCount: 0,
+            activeCount: 0,
+            cancelledCount: 0,
+          },
+        );
+
+        const paymentStats = payments.reduce(
+          (stats, payment) => {
+            // @ts-ignore
+            stats.totalGrossPay += parseFloat(payment.grossPay) || 0;
+            // @ts-ignore
+            stats.totalNetPay += parseFloat(payment.netPay) || 0;
+            stats.totalDebtDeduction +=
               // @ts-ignore
-              totalLuwang: parseFloat(pitak.totalLuwang),
-              status: pitak.status,
-              // @ts-ignore
-              bukid: pitak.bukid
-                ? {
-                    // @ts-ignore
-                    id: pitak.bukid.id,
-                    // @ts-ignore
-                    name: pitak.bukid.name,
-                  }
-                : null,
-            },
-            assignmentMetrics: assignmentStats,
-            paymentMetrics: paymentStats,
-            assignments: assignments.map(
-              (
-               a,
-              ) => ({
-                id: a.id,
-                assignmentDate: a.assignmentDate,
-                // @ts-ignore
-                luwangCount: parseFloat(a.luwangCount),
-                status: a.status,
-                // @ts-ignore
-                worker: a.worker
-                  ? {
-                      // @ts-ignore
-                      id: a.worker.id,
-                      // @ts-ignore
-                      name: a.worker.name,
-                    }
-                  : null,
-              }),
-            ),
-            payments: payments.map(
-              (
-                p,
-              ) => ({
-                id: p.id,
-                paymentDate: p.paymentDate,
-                // @ts-ignore
-                grossPay: parseFloat(p.grossPay),
-                // @ts-ignore
-                netPay: parseFloat(p.netPay),
-                status: p.status,
-                // @ts-ignore
-                worker: p.worker
-                  ? {
-                      // @ts-ignore
-                      id: p.worker.id,
-                      // @ts-ignore
-                      name: p.worker.name,
-                    }
-                  : null,
-              }),
-            ),
-          };
-        },
-      ),
+              parseFloat(payment.totalDebtDeduction) || 0;
+            stats.completedCount += payment.status === "completed" ? 1 : 0;
+            return stats;
+          },
+          {
+            totalPayments: payments.length,
+            totalGrossPay: 0,
+            totalNetPay: 0,
+            totalDebtDeduction: 0,
+            completedCount: 0,
+          },
+        );
+
+        return {
+          pitak: {
+            id: pitak.id,
+            location: pitak.location,
+            // @ts-ignore
+            totalLuwang: parseFloat(pitak.totalLuwang),
+            status: pitak.status,
+            // @ts-ignore
+            bukid: pitak.bukid
+              ? {
+                  // @ts-ignore
+                  id: pitak.bukid.id,
+                  // @ts-ignore
+                  name: pitak.bukid.name,
+                }
+              : null,
+          },
+          assignmentMetrics: assignmentStats,
+          paymentMetrics: paymentStats,
+          assignments: assignments.map((a) => ({
+            id: a.id,
+            assignmentDate: a.assignmentDate,
+            // @ts-ignore
+            luwangCount: parseFloat(a.luwangCount),
+            status: a.status,
+            // @ts-ignore
+            worker: a.worker
+              ? {
+                  // @ts-ignore
+                  id: a.worker.id,
+                  // @ts-ignore
+                  name: a.worker.name,
+                }
+              : null,
+          })),
+          payments: payments.map((p) => ({
+            id: p.id,
+            paymentDate: p.paymentDate,
+            // @ts-ignore
+            grossPay: parseFloat(p.grossPay),
+            // @ts-ignore
+            netPay: parseFloat(p.netPay),
+            status: p.status,
+            // @ts-ignore
+            worker: p.worker
+              ? {
+                  // @ts-ignore
+                  id: p.worker.id,
+                  // @ts-ignore
+                  name: p.worker.name,
+                }
+              : null,
+          })),
+        };
+      }),
     );
 
     // Calculate summary totals
     const summary = reportData.reduce(
-      (
-       item,
-      ) => {
-        // @ts-ignore
+      (totals, item) => {
         totals.totalPitaks++;
         // @ts-ignore
         totals.totalLuWangCapacity += parseFloat(item.pitak.totalLuwang);
-        // @ts-ignore
         totals.totalAssignments += item.assignmentMetrics.totalAssignments;
-        // @ts-ignore
         totals.totalLuWangAssigned += item.assignmentMetrics.totalLuWang;
-        // @ts-ignore
         totals.totalPayments += item.paymentMetrics.totalPayments;
-        // @ts-ignore
         totals.totalGrossPay += item.paymentMetrics.totalGrossPay;
-        // @ts-ignore
         totals.totalNetPay += item.paymentMetrics.totalNetPay;
 
         // Count by status
-        // @ts-ignore
         if (item.pitak.status === "active") totals.activePitaks++;
-        // @ts-ignore
         if (item.pitak.status === "inactive") totals.inactivePitaks++;
-        // @ts-ignore
         if (item.pitak.status === "completed") totals.harvestedPitaks++;
 
-        // @ts-ignore
         return totals;
       },
       {
@@ -281,6 +250,7 @@ module.exports = async (
         summary,
         detailedData: reportData,
         generatedAt: new Date(),
+        sessionId: currentSessionId,
       },
     };
   } catch (error) {

@@ -15,6 +15,7 @@ module.exports = async (filters = {}, userId) => {
     const qb = debtRepository
       .createQueryBuilder("debt")
       .leftJoinAndSelect("debt.worker", "worker")
+      .leftJoinAndSelect("debt.session", "session")
       .where("debt.balance > 0")
       .andWhere("debt.status NOT IN (:...statuses)", {
         statuses: ["paid", "cancelled"],

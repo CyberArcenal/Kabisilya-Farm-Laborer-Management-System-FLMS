@@ -6,9 +6,10 @@ const { AppDataSource } = require("../../../db/dataSource");
 const Worker = require("../../../../entities/Worker");
 // @ts-ignore
 const Pitak = require("../../../../entities/Pitak");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
 /**
- * Generate assignment report
+ * Generate assignment report scoped to current session
  * @param {Object} dateRange - Date range for report
  * @param {Object} filters - Additional filters
  * @param {number} userId - User ID for logging
@@ -19,44 +20,53 @@ module.exports = async (dateRange, filters = {}, userId) => {
   try {
     // @ts-ignore
     const { startDate, endDate } = dateRange || {};
-    
+
     if (!startDate || !endDate) {
       return {
         status: false,
         message: "Date range (startDate and endDate) is required for report",
-        data: null
+        data: { errors: ["Missing date range parameters"] },
       };
     }
 
     const assignmentRepo = AppDataSource.getRepository(Assignment);
-    
+    const currentSessionId = await farmSessionDefaultSessionId();
+
     // Build base query
     const queryBuilder = assignmentRepo
       .createQueryBuilder("assignment")
       .leftJoinAndSelect("assignment.worker", "worker")
       .leftJoinAndSelect("assignment.pitak", "pitak")
+      .leftJoinAndSelect("assignment.session", "session")
       .where("assignment.assignmentDate BETWEEN :startDate AND :endDate", {
         startDate,
-        endDate
-      });
+        endDate,
+      })
+      .andWhere("session.id = :sessionId", { sessionId: currentSessionId });
 
     // Apply additional filters
     // @ts-ignore
     if (filters.status) {
-      // @ts-ignore
-      queryBuilder.andWhere("assignment.status = :status", { status: filters.status });
+      queryBuilder.andWhere("assignment.status = :status", {
+        // @ts-ignore
+        status: filters.status,
+      });
     }
 
     // @ts-ignore
     if (filters.workerId) {
-      // @ts-ignore
-      queryBuilder.andWhere("assignment.workerId = :workerId", { workerId: filters.workerId });
+      queryBuilder.andWhere("worker.id = :workerId", {
+        // @ts-ignore
+        workerId: filters.workerId,
+      });
     }
 
     // @ts-ignore
     if (filters.pitakId) {
-      // @ts-ignore
-      queryBuilder.andWhere("assignment.pitakId = :pitakId", { pitakId: filters.pitakId });
+      queryBuilder.andWhere("pitak.id = :pitakId", {
+        // @ts-ignore
+        pitakId: filters.pitakId,
+      });
     }
 
     const assignments = await queryBuilder
@@ -68,35 +78,33 @@ module.exports = async (dateRange, filters = {}, userId) => {
     const summary = {
       totalAssignments: assignments.length,
       totalLuWang: 0,
-      byStatus: {
-        active: 0,
-        completed: 0,
-        cancelled: 0
-      },
+      byStatus: { active: 0, completed: 0, cancelled: 0 },
       byWorker: {},
-      byPitak: {}
+      byPitak: {},
     };
 
-    // Process assignments for report
-    // @ts-ignore
-    const reportData = assignments.map(assignment => {
+    const reportData = assignments.map((assignment) => {
+      // @ts-ignore
       const luwang = parseFloat(assignment.luwangCount) || 0;
-      
-      // Update summary
+
       summary.totalLuWang += luwang;
       // @ts-ignore
-      summary.byStatus[assignment.status] = (summary.byStatus[assignment.status] || 0) + 1;
-      
-      // Worker summary
+      summary.byStatus[assignment.status] =
+        // @ts-ignore
+        (summary.byStatus[assignment.status] || 0) + 1;
+
+      // @ts-ignore
       if (assignment.worker) {
+        // @ts-ignore
         const workerId = assignment.worker.id;
         // @ts-ignore
         if (!summary.byWorker[workerId]) {
           // @ts-ignore
           summary.byWorker[workerId] = {
+            // @ts-ignore
             name: assignment.worker.name,
             totalAssignments: 0,
-            totalLuWang: 0
+            totalLuWang: 0,
           };
         }
         // @ts-ignore
@@ -104,17 +112,19 @@ module.exports = async (dateRange, filters = {}, userId) => {
         // @ts-ignore
         summary.byWorker[workerId].totalLuWang += luwang;
       }
-      
-      // Pitak summary
+
+      // @ts-ignore
       if (assignment.pitak) {
+        // @ts-ignore
         const pitakId = assignment.pitak.id;
         // @ts-ignore
         if (!summary.byPitak[pitakId]) {
           // @ts-ignore
           summary.byPitak[pitakId] = {
+            // @ts-ignore
             name: assignment.pitak.name,
             totalAssignments: 0,
-            totalLuWang: 0
+            totalLuWang: 0,
           };
         }
         // @ts-ignore
@@ -128,27 +138,32 @@ module.exports = async (dateRange, filters = {}, userId) => {
         date: assignment.assignmentDate,
         luwangCount: luwang.toFixed(2),
         status: assignment.status,
-        worker: assignment.worker ? {
-          id: assignment.worker.id,
-          name: assignment.worker.name,
-          code: assignment.worker.code
-        } : null,
-        pitak: assignment.pitak ? {
-          id: assignment.pitak.id,
-          name: assignment.pitak.name,
-          code: assignment.pitak.code
-        } : null,
-        notes: assignment.notes
+        // @ts-ignore
+        worker: assignment.worker
+          // @ts-ignore
+          ? { id: assignment.worker.id, name: assignment.worker.name }
+          : null,
+        // @ts-ignore
+        pitak: assignment.pitak
+          ? {
+              // @ts-ignore
+              id: assignment.pitak.id,
+              // @ts-ignore
+              name: assignment.pitak.name,
+              // @ts-ignore
+              location: assignment.pitak.location,
+            }
+          : null,
+        notes: assignment.notes,
       };
     });
 
-    // Convert summary objects to arrays
-    summary.byWorker = Object.values(summary.byWorker)
-      .sort((a, b) => b.totalLuWang - a.totalLuWang);
-    
-    summary.byPitak = Object.values(summary.byPitak)
-      .sort((a, b) => b.totalLuWang - a.totalLuWang);
-
+    summary.byWorker = Object.values(summary.byWorker).sort(
+      (a, b) => b.totalLuWang - a.totalLuWang,
+    );
+    summary.byPitak = Object.values(summary.byPitak).sort(
+      (a, b) => b.totalLuWang - a.totalLuWang,
+    );
     // @ts-ignore
     summary.totalLuWang = summary.totalLuWang.toFixed(2);
 
@@ -157,22 +172,22 @@ module.exports = async (dateRange, filters = {}, userId) => {
       message: "Assignment report generated successfully",
       data: {
         report: reportData,
-        summary: summary,
+        summary,
         dateRange: {
           startDate,
           endDate,
-          duration: `${reportData.length} days`
-        }
-      }
+          duration: `${reportData.length} records`,
+        },
+      },
+      meta: { sessionId: currentSessionId },
     };
-
   } catch (error) {
     console.error("Error generating assignment report:", error);
     return {
       status: false,
+      message: "Failed to generate report",
       // @ts-ignore
-      message: `Failed to generate report: ${error.message}`,
-      data: null
+      data: { errors: [error.message || String(error)] },
     };
   }
 };

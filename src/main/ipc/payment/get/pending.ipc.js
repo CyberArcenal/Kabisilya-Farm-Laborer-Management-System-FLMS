@@ -3,6 +3,7 @@
 
 const Payment = require("../../../../entities/Payment");
 const { AppDataSource } = require("../../../db/dataSource");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
 module.exports = async function getPendingPayments(params = {}) {
   try {
@@ -20,6 +21,10 @@ module.exports = async function getPendingPayments(params = {}) {
       // @ts-ignore
       pitakId,
       // @ts-ignore
+      sessionId,
+      // @ts-ignore
+      currentSession = false, // New parameter
+      // @ts-ignore
       overdueOnly = false,
       // @ts-ignore
       sortBy = "createdAt",
@@ -29,11 +34,12 @@ module.exports = async function getPendingPayments(params = {}) {
 
     const paymentRepository = AppDataSource.getRepository(Payment);
 
-    // Base query: join worker and pitak
+    // Base query: join worker, pitak, and session
     const queryBuilder = paymentRepository
       .createQueryBuilder("payment")
       .leftJoinAndSelect("payment.worker", "worker")
       .leftJoinAndSelect("payment.pitak", "pitak")
+      .leftJoinAndSelect("payment.session", "session") // Added session
       .where("payment.status = :status", { status: "pending" });
 
     // Apply additional filters to main list
@@ -60,6 +66,16 @@ module.exports = async function getPendingPayments(params = {}) {
 
     if (pitakId) {
       queryBuilder.andWhere("pitak.id = :pitakId", { pitakId });
+    }
+
+    if (sessionId) {
+      queryBuilder.andWhere("session.id = :sessionId", { sessionId });
+    }
+
+    // Handle current session filter
+    if (currentSession) {
+      const currentSessionId = await farmSessionDefaultSessionId();
+      queryBuilder.andWhere("session.id = :currentSessionId", { currentSessionId });
     }
 
     // Pagination parsing
@@ -93,6 +109,7 @@ module.exports = async function getPendingPayments(params = {}) {
       .createQueryBuilder("payment")
       .leftJoin("payment.worker", "worker")
       .leftJoin("payment.pitak", "pitak")
+      .leftJoin("payment.session", "session") // Added session
       .select([
         "COUNT(payment.id) as total_pending",
         "COALESCE(SUM(payment.grossPay), 0) as total_gross_pending",
@@ -107,6 +124,11 @@ module.exports = async function getPendingPayments(params = {}) {
     if (endDate) statsQB.andWhere("payment.createdAt <= :endDate", { endDate: new Date(endDate) });
     if (workerId) statsQB.andWhere("worker.id = :workerId", { workerId });
     if (pitakId) statsQB.andWhere("pitak.id = :pitakId", { pitakId });
+    if (sessionId) statsQB.andWhere("session.id = :sessionId", { sessionId });
+    if (currentSession) {
+      const currentSessionId = await farmSessionDefaultSessionId();
+      statsQB.andWhere("session.id = :currentSessionId", { currentSessionId });
+    }
 
     const stats = await statsQB.getRawOne();
 
@@ -115,6 +137,7 @@ module.exports = async function getPendingPayments(params = {}) {
       .createQueryBuilder("payment")
       .leftJoin("payment.worker", "worker")
       .leftJoin("payment.pitak", "pitak")
+      .leftJoin("payment.session", "session") // Added session
       .select([
         "COUNT(payment.id) as total_overdue",
         "COALESCE(SUM(payment.netPay), 0) as total_overdue_amount",
@@ -126,6 +149,11 @@ module.exports = async function getPendingPayments(params = {}) {
     if (endDate) overdueQB.andWhere("payment.createdAt <= :endDate", { endDate: new Date(endDate) });
     if (workerId) overdueQB.andWhere("worker.id = :workerId", { workerId });
     if (pitakId) overdueQB.andWhere("pitak.id = :pitakId", { pitakId });
+    if (sessionId) overdueQB.andWhere("session.id = :sessionId", { sessionId });
+    if (currentSession) {
+      const currentSessionId = await farmSessionDefaultSessionId();
+      overdueQB.andWhere("session.id = :currentSessionId", { currentSessionId });
+    }
 
     const overdueStats = await overdueQB.getRawOne();
 
@@ -134,6 +162,7 @@ module.exports = async function getPendingPayments(params = {}) {
       .createQueryBuilder("payment")
       .leftJoin("payment.worker", "worker")
       .leftJoin("payment.pitak", "pitak")
+      .leftJoin("payment.session", "session") // Added session
       .select([
         "worker.id as worker_id",
         "worker.name as worker_name",
@@ -147,6 +176,11 @@ module.exports = async function getPendingPayments(params = {}) {
     if (endDate) topWorkersQB.andWhere("payment.createdAt <= :endDate", { endDate: new Date(endDate) });
     if (workerId) topWorkersQB.andWhere("worker.id = :workerId", { workerId });
     if (pitakId) topWorkersQB.andWhere("pitak.id = :pitakId", { pitakId });
+    if (sessionId) topWorkersQB.andWhere("session.id = :sessionId", { sessionId });
+    if (currentSession) {
+      const currentSessionId = await farmSessionDefaultSessionId();
+      topWorkersQB.andWhere("session.id = :currentSessionId", { currentSessionId });
+    }
 
     topWorkersQB.groupBy("worker.id, worker.name").orderBy("pending_amount", "DESC").limit(10);
     const topWorkersPending = await topWorkersQB.getRawMany();
@@ -155,6 +189,7 @@ module.exports = async function getPendingPayments(params = {}) {
     const agingExpr = "(julianday('now') - julianday(payment.createdAt))";
     const agingQB = paymentRepository
       .createQueryBuilder("payment")
+      .leftJoin("payment.session", "session") // Added session
       .select([
         `CASE
           WHEN ${agingExpr} <= 7 THEN '0-7 days'
@@ -170,8 +205,13 @@ module.exports = async function getPendingPayments(params = {}) {
     if (overdueOnly) agingQB.andWhere("payment.periodEnd < :today", { today: new Date() });
     if (startDate) agingQB.andWhere("payment.createdAt >= :startDate", { startDate: new Date(startDate) });
     if (endDate) agingQB.andWhere("payment.createdAt <= :endDate", { endDate: new Date(endDate) });
-    if (workerId) agingQB.andWhere("payment.workerId = :workerId", { workerId }); // workerId here is safe for filtering in this context
+    if (workerId) agingQB.andWhere("payment.workerId = :workerId", { workerId });
     if (pitakId) agingQB.andWhere("payment.pitakId = :pitakId", { pitakId });
+    if (sessionId) agingQB.andWhere("session.id = :sessionId", { sessionId });
+    if (currentSession) {
+      const currentSessionId = await farmSessionDefaultSessionId();
+      agingQB.andWhere("session.id = :currentSessionId", { currentSessionId });
+    }
 
     agingQB.groupBy("aging_bucket");
     const agingAnalysis = await agingQB.getRawMany();
@@ -203,6 +243,8 @@ module.exports = async function getPendingPayments(params = {}) {
         worker: p.worker ? { id: p.worker.id, name: p.worker.name || null } : null,
         // @ts-ignore
         pitak: p.pitak ? { id: p.pitak.id, location: p.pitak.location || null } : null,
+        // @ts-ignore
+        session: p.session ? { id: p.session.id, name: p.session.name || null } : null,
         grossPay: safeNumber(p.grossPay),
         netPay: safeNumber(p.netPay),
         status: p.status,
@@ -263,6 +305,7 @@ module.exports = async function getPendingPayments(params = {}) {
         agingAnalysis: normalizedAging,
         filters: {
           overdueOnly,
+          currentSession,
           startDate: startDate || "All",
           endDate: endDate || "All",
         },

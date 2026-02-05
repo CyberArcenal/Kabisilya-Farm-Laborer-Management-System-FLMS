@@ -7,8 +7,8 @@
  * @class
  * @implements {MigrationInterface}
  */
-module.exports = class InitSchema1770202853989 {
-    name = 'InitSchema1770202853989'
+module.exports = class InitSchema1770315092256 {
+    name = 'InitSchema1770315092256'
 
     /**
      * @param {QueryRunner} queryRunner
@@ -45,7 +45,7 @@ module.exports = class InitSchema1770202853989 {
         await queryRunner.query(`CREATE UNIQUE INDEX "UX_PAYMENTS_PITAK_WORKER_SESSION" ON "payments" ("pitakId", "workerId", "sessionId") `);
         await queryRunner.query(`CREATE UNIQUE INDEX "UX_PAYMENTS_ASSIGNMENT" ON "payments" ("assignmentId") `);
         await queryRunner.query(`CREATE UNIQUE INDEX "UX_PAYMENTS_IDEMPOTENCY_KEY" ON "payments" ("idempotencyKey") `);
-        await queryRunner.query(`CREATE TABLE "payment_histories" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "actionType" varchar NOT NULL DEFAULT ('update'), "changedField" varchar NOT NULL, "oldValue" varchar, "newValue" varchar, "oldAmount" decimal(10,2) DEFAULT (0), "newAmount" decimal(10,2) DEFAULT (0), "notes" varchar, "performedBy" varchar, "changeDate" datetime NOT NULL DEFAULT (datetime('now')), "paymentId" integer)`);
+        await queryRunner.query(`CREATE TABLE "payment_histories" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "actionType" varchar NOT NULL DEFAULT ('update'), "changedField" varchar NOT NULL, "oldValue" varchar, "newValue" varchar, "oldAmount" decimal(10,2) DEFAULT (0), "newAmount" decimal(10,2) DEFAULT (0), "notes" varchar, "performedBy" varchar, "changeDate" datetime NOT NULL DEFAULT (datetime('now')), "referenceNumber" varchar, "paymentId" integer)`);
         await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_HISTORY_ACTION" ON "payment_histories" ("actionType") `);
         await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_HISTORY_DATE" ON "payment_histories" ("changeDate") `);
         await queryRunner.query(`CREATE TABLE "pitaks" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "location" varchar, "totalLuwang" decimal(7,2) NOT NULL DEFAULT (0), "layoutType" varchar NOT NULL DEFAULT ('square'), "sideLengths" text, "areaSqm" decimal(10,2) NOT NULL DEFAULT (0), "notes" varchar, "status" varchar NOT NULL DEFAULT ('active'), "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "bukidId" integer, CONSTRAINT "UQ_BUKID_LOCATION" UNIQUE ("bukidId", "location"))`);
@@ -116,8 +116,8 @@ module.exports = class InitSchema1770202853989 {
         await queryRunner.query(`CREATE UNIQUE INDEX "UX_PAYMENTS_IDEMPOTENCY_KEY" ON "payments" ("idempotencyKey") `);
         await queryRunner.query(`DROP INDEX "IDX_PAYMENT_HISTORY_ACTION"`);
         await queryRunner.query(`DROP INDEX "IDX_PAYMENT_HISTORY_DATE"`);
-        await queryRunner.query(`CREATE TABLE "temporary_payment_histories" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "actionType" varchar NOT NULL DEFAULT ('update'), "changedField" varchar NOT NULL, "oldValue" varchar, "newValue" varchar, "oldAmount" decimal(10,2) DEFAULT (0), "newAmount" decimal(10,2) DEFAULT (0), "notes" varchar, "performedBy" varchar, "changeDate" datetime NOT NULL DEFAULT (datetime('now')), "paymentId" integer, CONSTRAINT "FK_93d739910b5eedf4e4c8ebd0ef4" FOREIGN KEY ("paymentId") REFERENCES "payments" ("id") ON DELETE CASCADE ON UPDATE NO ACTION)`);
-        await queryRunner.query(`INSERT INTO "temporary_payment_histories"("id", "actionType", "changedField", "oldValue", "newValue", "oldAmount", "newAmount", "notes", "performedBy", "changeDate", "paymentId") SELECT "id", "actionType", "changedField", "oldValue", "newValue", "oldAmount", "newAmount", "notes", "performedBy", "changeDate", "paymentId" FROM "payment_histories"`);
+        await queryRunner.query(`CREATE TABLE "temporary_payment_histories" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "actionType" varchar NOT NULL DEFAULT ('update'), "changedField" varchar NOT NULL, "oldValue" varchar, "newValue" varchar, "oldAmount" decimal(10,2) DEFAULT (0), "newAmount" decimal(10,2) DEFAULT (0), "notes" varchar, "performedBy" varchar, "changeDate" datetime NOT NULL DEFAULT (datetime('now')), "referenceNumber" varchar, "paymentId" integer, CONSTRAINT "FK_93d739910b5eedf4e4c8ebd0ef4" FOREIGN KEY ("paymentId") REFERENCES "payments" ("id") ON DELETE CASCADE ON UPDATE NO ACTION)`);
+        await queryRunner.query(`INSERT INTO "temporary_payment_histories"("id", "actionType", "changedField", "oldValue", "newValue", "oldAmount", "newAmount", "notes", "performedBy", "changeDate", "referenceNumber", "paymentId") SELECT "id", "actionType", "changedField", "oldValue", "newValue", "oldAmount", "newAmount", "notes", "performedBy", "changeDate", "referenceNumber", "paymentId" FROM "payment_histories"`);
         await queryRunner.query(`DROP TABLE "payment_histories"`);
         await queryRunner.query(`ALTER TABLE "temporary_payment_histories" RENAME TO "payment_histories"`);
         await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_HISTORY_ACTION" ON "payment_histories" ("actionType") `);
@@ -171,8 +171,8 @@ module.exports = class InitSchema1770202853989 {
         await queryRunner.query(`DROP INDEX "IDX_PAYMENT_HISTORY_DATE"`);
         await queryRunner.query(`DROP INDEX "IDX_PAYMENT_HISTORY_ACTION"`);
         await queryRunner.query(`ALTER TABLE "payment_histories" RENAME TO "temporary_payment_histories"`);
-        await queryRunner.query(`CREATE TABLE "payment_histories" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "actionType" varchar NOT NULL DEFAULT ('update'), "changedField" varchar NOT NULL, "oldValue" varchar, "newValue" varchar, "oldAmount" decimal(10,2) DEFAULT (0), "newAmount" decimal(10,2) DEFAULT (0), "notes" varchar, "performedBy" varchar, "changeDate" datetime NOT NULL DEFAULT (datetime('now')), "paymentId" integer)`);
-        await queryRunner.query(`INSERT INTO "payment_histories"("id", "actionType", "changedField", "oldValue", "newValue", "oldAmount", "newAmount", "notes", "performedBy", "changeDate", "paymentId") SELECT "id", "actionType", "changedField", "oldValue", "newValue", "oldAmount", "newAmount", "notes", "performedBy", "changeDate", "paymentId" FROM "temporary_payment_histories"`);
+        await queryRunner.query(`CREATE TABLE "payment_histories" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "actionType" varchar NOT NULL DEFAULT ('update'), "changedField" varchar NOT NULL, "oldValue" varchar, "newValue" varchar, "oldAmount" decimal(10,2) DEFAULT (0), "newAmount" decimal(10,2) DEFAULT (0), "notes" varchar, "performedBy" varchar, "changeDate" datetime NOT NULL DEFAULT (datetime('now')), "referenceNumber" varchar, "paymentId" integer)`);
+        await queryRunner.query(`INSERT INTO "payment_histories"("id", "actionType", "changedField", "oldValue", "newValue", "oldAmount", "newAmount", "notes", "performedBy", "changeDate", "referenceNumber", "paymentId") SELECT "id", "actionType", "changedField", "oldValue", "newValue", "oldAmount", "newAmount", "notes", "performedBy", "changeDate", "referenceNumber", "paymentId" FROM "temporary_payment_histories"`);
         await queryRunner.query(`DROP TABLE "temporary_payment_histories"`);
         await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_HISTORY_DATE" ON "payment_histories" ("changeDate") `);
         await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_HISTORY_ACTION" ON "payment_histories" ("actionType") `);

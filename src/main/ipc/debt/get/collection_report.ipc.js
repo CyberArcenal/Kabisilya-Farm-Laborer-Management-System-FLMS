@@ -49,7 +49,7 @@ module.exports = async (dateRange = {}, userId) => {
         dueDate: LessThan(today),
         status: Not(In(["paid", "cancelled"])),
       },
-      relations: ["worker"],
+      relations: ["worker", "session"],
       order: { dueDate: "ASC" },
     });
 

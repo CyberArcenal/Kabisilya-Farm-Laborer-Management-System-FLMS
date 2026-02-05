@@ -1,13 +1,20 @@
 // ipc/bukid/get/by_name.ipc.js
-//@ts-check
+// @ts-nocheck
 
 const { AppDataSource } = require("../../../db/dataSource");
 const Bukid = require("../../../../entities/Bukid");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
+/**
+ * Get bukids by name scoped to current session
+ * @param {Object} params - Parameters
+ * @param {string} params.name - Name to search
+ * @param {number} params._userId - User ID for logging
+ * @returns {Promise<Object>} Response object
+ */
 module.exports = async function getBukidByName(params = {}) {
   try {
     const bukidRepository = AppDataSource.getRepository(Bukid);
-    // @ts-ignore
     const { name, _userId } = params;
     
     if (!name) {
@@ -18,22 +25,27 @@ module.exports = async function getBukidByName(params = {}) {
       };
     }
 
+    // Get current session ID
+    const currentSessionId = await farmSessionDefaultSessionId();
+
     const bukids = await bukidRepository.find({
-      where: { name: name },
+      where: { 
+        name: name,
+        session: { id: currentSessionId }
+      },
       relations: ['pitaks']
     });
 
     return {
       status: true,
-      message: 'Bukid retrieved successfully',
+      message: 'Bukids retrieved successfully',
       data: { bukids }
     };
   } catch (error) {
     console.error('Error in getBukidByName:', error);
     return {
       status: false,
-      // @ts-ignore
-      message: `Failed to retrieve bukid: ${error.message}`,
+      message: `Failed to retrieve bukids: ${error.message}`,
       data: null
     };
   }

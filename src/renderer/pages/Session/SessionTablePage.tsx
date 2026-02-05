@@ -83,14 +83,7 @@ const SessionTablePage: React.FC = () => {
   };
 
   const closeFormDialog = async () => {
-    if (
-      !(await dialogs.confirm({
-        title: "Close Form",
-        message:
-          "Are you sure you want to close the form? Unsaved changes will be lost.",
-      }))
-    )
-      return;
+  
     setIsFormDialogOpen(false);
     setSelectedSessionId(null);
   };

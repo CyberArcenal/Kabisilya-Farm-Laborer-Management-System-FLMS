@@ -17,6 +17,7 @@ module.exports = async (workerId, filters = {}, userId) => {
     const qb = debtRepository
       .createQueryBuilder("debt")
       .leftJoinAndSelect("debt.worker", "worker")
+      .leftJoinAndSelect("debt.session", "session")
       .leftJoinAndSelect("debt.history", "history")
       .where("worker.id = :workerId", { workerId })
       .orderBy("debt.dateIncurred", "DESC");

@@ -1,67 +1,133 @@
 // dashboard/handlers/mobileDashboard.js
 //@ts-check
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
+
 class MobileDashboard {
   /**
-     * @param {{ worker: any; assignment: any; debt: any; payment: any; pitak: any; }} repositories
-     * @param {any} params
-     */
+   * Get mobile-optimized dashboard data
+   * @param {Object} repositories - Repository objects
+   * @param {Object} params - Query parameters
+   * @returns {Promise<Object>} Mobile dashboard data
+   */
   async getMobileDashboard(repositories, params) {
     const { 
+      // @ts-ignore
       worker: workerRepo, 
+      // @ts-ignore
       assignment: assignmentRepo, 
+      // @ts-ignore
       debt: debtRepo,
+      // @ts-ignore
       payment: paymentRepo,
-      pitak: pitakRepo
+      // @ts-ignore
+      pitak: pitakRepo 
     } = repositories;
     
     try {
       const now = new Date();
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const weekStart = new Date(now);
-      weekStart.setDate(now.getDate() - 7);
+      
+      // Check for current session filter
+      let sessionId = null;
+      // @ts-ignore
+      if (params.currentSession) {
+        sessionId = await farmSessionDefaultSessionId();
+      }
       
       // Get key metrics for mobile display
       const activeWorkers = await workerRepo.count({ where: { status: 'active' } });
-      const todayAssignments = await assignmentRepo.count({ 
+      
+      // Get today's assignments with session filter
+      let todayAssignmentsQuery = assignmentRepo.count({ 
         where: { assignmentDate: { $gte: todayStart } } 
       });
+      
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        // @ts-ignore
+        todayAssignmentsQuery = assignmentRepo
+          .createQueryBuilder("assignment")
+          .where("assignment.assignmentDate >= :today", { today: todayStart })
+          .andWhere("assignment.session.id = :sessionId", { sessionId })
+          .getCount();
+      }
+      
+      const todayAssignments = await todayAssignmentsQuery;
+      
       const activeAssignments = await assignmentRepo.count({ where: { status: 'active' } });
       const activePitaks = await pitakRepo.count({ where: { status: 'active' } });
       
-      // Get today's completed assignments
-      const todayCompleted = await assignmentRepo.count({
+      // Get today's completed assignments with session filter
+      let todayCompletedQuery = assignmentRepo.count({
         where: {
           assignmentDate: { $gte: todayStart },
           status: 'completed'
         }
       });
       
-      // Get today's payments
-      const todayPayments = await paymentRepo
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        // @ts-ignore
+        todayCompletedQuery = assignmentRepo
+          .createQueryBuilder("assignment")
+          .where("assignment.assignmentDate >= :today", { today: todayStart })
+          .andWhere("assignment.status = :status", { status: 'completed' })
+          .andWhere("assignment.session.id = :sessionId", { sessionId })
+          .getCount();
+      }
+      
+      const todayCompleted = await todayCompletedQuery;
+      
+      // Get today's payments with session filter
+      const todayPaymentsQuery = paymentRepo
         .createQueryBuilder("payment")
         .select("SUM(payment.netPay)", "total")
         .where("payment.paymentDate >= :today", { today: todayStart })
-        .andWhere("payment.status = :status", { status: 'completed' })
-        .getRawOne();
+        .andWhere("payment.status = :status", { status: 'completed' });
       
-      // Get pending debts
-      const pendingDebts = await debtRepo.count({ 
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        todayPaymentsQuery.andWhere("payment.session.id = :sessionId", { sessionId });
+      }
+      
+      const todayPayments = await todayPaymentsQuery.getRawOne();
+      
+      // Get pending debts with session filter
+      let pendingDebtsQuery = debtRepo.count({ 
         where: { status: 'pending' } 
       });
       
-      // Get total debt balance
-      const totalDebtBalance = await debtRepo
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        // @ts-ignore
+        pendingDebtsQuery = debtRepo
+          .createQueryBuilder("debt")
+          .where("debt.status = :status", { status: 'pending' })
+          .andWhere("debt.session.id = :sessionId", { sessionId })
+          .getCount();
+      }
+      
+      const pendingDebts = await pendingDebtsQuery;
+      
+      // Get total debt balance with session filter
+      const totalDebtBalanceQuery = debtRepo
         .createQueryBuilder("debt")
         .select("SUM(debt.balance)", "total")
         .where("debt.status IN (:...statuses)", { 
           statuses: ['pending', 'partially_paid'] 
-        })
-        .getRawOne();
+        });
       
-      // Get recent activities (last 3 hours)
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        totalDebtBalanceQuery.andWhere("debt.session.id = :sessionId", { sessionId });
+      }
+      
+      const totalDebtBalance = await totalDebtBalanceQuery.getRawOne();
+      
+      // Get recent activities (last 3 hours) with session filter
       const threeHoursAgo = new Date(now.getTime() - 3 * 60 * 60 * 1000);
       
-      const recentActivities = await assignmentRepo.find({
+      let recentActivitiesQuery = assignmentRepo.find({
         where: {
           updatedAt: { $gte: threeHoursAgo }
         },
@@ -70,8 +136,24 @@ class MobileDashboard {
         take: 5
       });
       
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        // @ts-ignore
+        recentActivitiesQuery = assignmentRepo
+          .createQueryBuilder("assignment")
+          .leftJoin("assignment.worker", "worker")
+          .where("assignment.updatedAt >= :recent", { recent: threeHoursAgo })
+          .andWhere("assignment.session.id = :sessionId", { sessionId })
+          .orderBy("assignment.updatedAt", "DESC")
+          .take(5)
+          .getMany();
+      }
+      
+      const recentActivities = await recentActivitiesQuery;
+      
       // Format activities for mobile
-      const formattedActivities = recentActivities.map((/** @type {{ id: any; worker: { name: any; }; status: string; luwangCount: string; updatedAt: any; }} */ activity) => ({
+      // @ts-ignore
+      const formattedActivities = recentActivities.map((activity) => ({
         id: activity.id,
         type: 'assignment',
         workerName: activity.worker?.name || 'Unknown',
@@ -83,8 +165,8 @@ class MobileDashboard {
         time: this.formatTimeAgo(activity.updatedAt)
       }));
       
-      // Get workers with upcoming assignments today
-      const workersWithTodayAssignments = await assignmentRepo
+      // Get workers with upcoming assignments today with session filter
+      const workersWithTodayAssignmentsQuery = assignmentRepo
         .createQueryBuilder("assignment")
         .leftJoin("assignment.worker", "worker")
         .select([
@@ -92,7 +174,14 @@ class MobileDashboard {
           "COUNT(assignment.id) as assignmentCount",
           "SUM(assignment.luwangCount) as totalLuwang"
         ])
-        .where("assignment.assignmentDate >= :today", { today: todayStart })
+        .where("assignment.assignmentDate >= :today", { today: todayStart });
+      
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        workersWithTodayAssignmentsQuery.andWhere("assignment.session.id = :sessionId", { sessionId });
+      }
+      
+      const workersWithTodayAssignments = await workersWithTodayAssignmentsQuery
         .groupBy("worker.name")
         .orderBy("assignmentCount", "DESC")
         .limit(5)
@@ -106,6 +195,13 @@ class MobileDashboard {
       const averagePayment = parseInt(todayPayments?.paymentCount) > 0 
         ? parseFloat(todayPayments?.total) / parseInt(todayPayments?.paymentCount) 
         : 0;
+      
+      // Get mobile alerts with session filter
+      const alerts = await this.getMobileAlerts(repositories, {
+        // @ts-ignore
+        currentSession: params.currentSession,
+        sessionId
+      });
       
       // Prepare mobile-optimized response
       return {
@@ -153,13 +249,18 @@ class MobileDashboard {
             averagePayment: averagePayment
           },
           recentActivities: formattedActivities,
-          todaysTopWorkers: workersWithTodayAssignments.map((/** @type {{ workerName: any; assignmentCount: string; totalLuwang: string; }} */ worker) => ({
+          // @ts-ignore
+          todaysTopWorkers: workersWithTodayAssignments.map((worker) => ({
             workerName: worker.workerName,
             assignmentCount: parseInt(worker.assignmentCount),
             totalLuwang: parseFloat(worker.totalLuwang)
           })),
-          alerts: await this.getMobileAlerts(repositories),
-          lastUpdated: this.formatTimeAgo(now)
+          alerts: alerts,
+          lastUpdated: this.formatTimeAgo(now),
+          filters: {
+            // @ts-ignore
+            currentSession: params.currentSession || false
+          }
         }
       };
     } catch (error) {
@@ -169,10 +270,13 @@ class MobileDashboard {
   }
   
   /**
-     * @param {{ worker: any; assignment: any; debt: any; }} repositories
-     * @param {any} params
-     */
+   * Get quick statistics for mobile dashboard
+   * @param {Object} repositories - Repository objects
+   * @param {Object} params - Query parameters
+   * @returns {Promise<Object>} Quick statistics
+   */
   async getQuickStats(repositories, params) {
+    // @ts-ignore
     const { worker: workerRepo, assignment: assignmentRepo, debt: debtRepo } = repositories;
     
     try {
@@ -181,44 +285,117 @@ class MobileDashboard {
       const weekStart = new Date(now);
       weekStart.setDate(now.getDate() - 7);
       
+      // Check for current session filter
+      let sessionId = null;
+      // @ts-ignore
+      if (params.currentSession) {
+        sessionId = await farmSessionDefaultSessionId();
+      }
+      
       // Get worker statistics
       const totalWorkers = await workerRepo.count();
       const activeWorkers = await workerRepo.count({ where: { status: 'active' } });
       const inactiveWorkers = await workerRepo.count({ where: { status: 'inactive' } });
       
-      // Get assignment statistics
-      const todayAssignments = await assignmentRepo.count({ 
+      // Get assignment statistics with session filter
+      let todayAssignmentsQuery = assignmentRepo.count({ 
         where: { assignmentDate: { $gte: todayStart } } 
       });
       
-      const weekAssignments = await assignmentRepo.count({ 
+      let weekAssignmentsQuery = assignmentRepo.count({ 
         where: { assignmentDate: { $gte: weekStart } } 
       });
+      
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        // @ts-ignore
+        todayAssignmentsQuery = assignmentRepo
+          .createQueryBuilder("assignment")
+          .where("assignment.assignmentDate >= :today", { today: todayStart })
+          .andWhere("assignment.session.id = :sessionId", { sessionId })
+          .getCount();
+        
+        // @ts-ignore
+        weekAssignmentsQuery = assignmentRepo
+          .createQueryBuilder("assignment")
+          .where("assignment.assignmentDate >= :weekStart", { weekStart })
+          .andWhere("assignment.session.id = :sessionId", { sessionId })
+          .getCount();
+      }
+      
+      const todayAssignments = await todayAssignmentsQuery;
+      const weekAssignments = await weekAssignmentsQuery;
       
       const activeAssignments = await assignmentRepo.count({ where: { status: 'active' } });
       const completedAssignments = await assignmentRepo.count({ where: { status: 'completed' } });
       
-      // Get debt statistics
-      const totalDebts = await debtRepo.count();
-      const pendingDebts = await debtRepo.count({ where: { status: 'pending' } });
-      const paidDebts = await debtRepo.count({ where: { status: 'paid' } });
+      // Get debt statistics with session filter
+      let totalDebtsQuery = debtRepo.count();
+      let pendingDebtsQuery = debtRepo.count({ where: { status: 'pending' } });
+      let paidDebtsQuery = debtRepo.count({ where: { status: 'paid' } });
       
-      const debtStats = await debtRepo
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        // @ts-ignore
+        totalDebtsQuery = debtRepo
+          .createQueryBuilder("debt")
+          .where("debt.session.id = :sessionId", { sessionId })
+          .getCount();
+        
+        // @ts-ignore
+        pendingDebtsQuery = debtRepo
+          .createQueryBuilder("debt")
+          .where("debt.status = :status", { status: 'pending' })
+          .andWhere("debt.session.id = :sessionId", { sessionId })
+          .getCount();
+        
+        // @ts-ignore
+        paidDebtsQuery = debtRepo
+          .createQueryBuilder("debt")
+          .where("debt.status = :status", { status: 'paid' })
+          .andWhere("debt.session.id = :sessionId", { sessionId })
+          .getCount();
+      }
+      
+      const totalDebts = await totalDebtsQuery;
+      const pendingDebts = await pendingDebtsQuery;
+      const paidDebts = await paidDebtsQuery;
+      
+      const debtStatsQuery = debtRepo
         .createQueryBuilder("debt")
         .select([
           "SUM(debt.amount) as totalAmount",
           "SUM(debt.balance) as totalBalance",
           "SUM(debt.totalPaid) as totalPaid"
-        ])
-        .getRawOne();
+        ]);
+      
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        debtStatsQuery.where("debt.session.id = :sessionId", { sessionId });
+      }
+      
+      const debtStats = await debtStatsQuery.getRawOne();
       
       // Get today's completion rate
-      const todayCompleted = await assignmentRepo.count({
+      let todayCompletedQuery = assignmentRepo.count({
         where: {
           assignmentDate: { $gte: todayStart },
           status: 'completed'
         }
       });
+      
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        // @ts-ignore
+        todayCompletedQuery = assignmentRepo
+          .createQueryBuilder("assignment")
+          .where("assignment.assignmentDate >= :today", { today: todayStart })
+          .andWhere("assignment.status = :status", { status: 'completed' })
+          .andWhere("assignment.session.id = :sessionId", { sessionId })
+          .getCount();
+      }
+      
+      const todayCompleted = await todayCompletedQuery;
       
       const todayCompletionRate = todayAssignments > 0 
         ? (todayCompleted / todayAssignments) * 100 
@@ -284,6 +461,10 @@ class MobileDashboard {
               activeAssignments, 
               todayCompletionRate
             )
+          },
+          filters: {
+            // @ts-ignore
+            currentSession: params.currentSession || false
           }
         }
       };
@@ -294,11 +475,14 @@ class MobileDashboard {
   }
   
   /**
-     * @param {{ worker: any; assignment: any; debt: any; payment: any; }} repositories
-     * @param {{ workerId: any; }} params
-     */
+   * Get quick view for a specific worker
+   * @param {Object} repositories - Repository objects
+   * @param {Object} params - Query parameters
+   * @returns {Promise<Object>} Worker quick view data
+   */
   async getWorkerQuickView(repositories, params) {
-    const { workerId } = params;
+    // @ts-ignore
+    const { workerId, currentSession = false } = params;
     
     if (!workerId) {
       return {
@@ -309,13 +493,23 @@ class MobileDashboard {
     }
     
     const { 
+      // @ts-ignore
       worker: workerRepo, 
+      // @ts-ignore
       assignment: assignmentRepo, 
+      // @ts-ignore
       debt: debtRepo,
+      // @ts-ignore
       payment: paymentRepo 
     } = repositories;
     
     try {
+      // Get current session ID if requested
+      let sessionId = null;
+      if (currentSession) {
+        sessionId = await farmSessionDefaultSessionId();
+      }
+      
       // Get worker details
       const worker = await workerRepo.findOne({
         where: { id: workerId },
@@ -330,70 +524,122 @@ class MobileDashboard {
       }
       
       const now = new Date();
+      // @ts-ignore
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const weekStart = new Date(now);
       weekStart.setDate(now.getDate() - 30); // Last 30 days
       
-      // Get worker's assignments
-      const assignments = await assignmentRepo.find({
+      // Get worker's assignments with session filter
+      let assignmentsQuery = assignmentRepo.find({
         where: { worker: { id: workerId } },
         order: { assignmentDate: 'DESC' },
         take: 10
       });
       
-      // Get worker's debts
-      const debts = await debtRepo.find({
+      if (currentSession && sessionId) {
+        // @ts-ignore
+        assignmentsQuery = assignmentRepo
+          .createQueryBuilder("assignment")
+          .where("assignment.worker.id = :workerId", { workerId })
+          .andWhere("assignment.session.id = :sessionId", { sessionId })
+          .orderBy("assignment.assignmentDate", "DESC")
+          .take(10)
+          .getMany();
+      }
+      
+      const assignments = await assignmentsQuery;
+      
+      // Get worker's debts with session filter
+      let debtsQuery = debtRepo.find({
         where: { worker: { id: workerId } },
         order: { dateIncurred: 'DESC' }
       });
       
-      // Get worker's payments
-      const payments = await paymentRepo.find({
+      if (currentSession && sessionId) {
+        // @ts-ignore
+        debtsQuery = debtRepo
+          .createQueryBuilder("debt")
+          .where("debt.worker.id = :workerId", { workerId })
+          .andWhere("debt.session.id = :sessionId", { sessionId })
+          .orderBy("debt.dateIncurred", "DESC")
+          .getMany();
+      }
+      
+      const debts = await debtsQuery;
+      
+      // Get worker's payments with session filter
+      let paymentsQuery = paymentRepo.find({
         where: { worker: { id: workerId } },
         order: { paymentDate: 'DESC' },
         take: 10
       });
       
+      if (currentSession && sessionId) {
+        // @ts-ignore
+        paymentsQuery = paymentRepo
+          .createQueryBuilder("payment")
+          .where("payment.worker.id = :workerId", { workerId })
+          .andWhere("payment.session.id = :sessionId", { sessionId })
+          .orderBy("payment.paymentDate", "DESC")
+          .take(10)
+          .getMany();
+      }
+      
+      const payments = await paymentsQuery;
+      
       // Calculate assignment statistics
       const totalAssignments = assignments.length;
-      const completedAssignments = assignments.filter((/** @type {{ status: string; }} */ a) => a.status === 'completed').length;
-      const activeAssignments = assignments.filter((/** @type {{ status: string; }} */ a) => a.status === 'active').length;
+      // @ts-ignore
+      const completedAssignments = assignments.filter(a => a.status === 'completed').length;
+      // @ts-ignore
+      const activeAssignments = assignments.filter(a => a.status === 'active').length;
       
-      const totalLuwang = assignments.reduce((/** @type {number} */ sum, /** @type {{ luwangCount: any; }} */ a) => 
+      // @ts-ignore
+      const totalLuwang = assignments.reduce((sum, a) => 
         sum + parseFloat(a.luwangCount || 0), 0);
       
       const completedLuwang = assignments
-        .filter((/** @type {{ status: string; }} */ a) => a.status === 'completed')
-        .reduce((/** @type {number} */ sum, /** @type {{ luwangCount: any; }} */ a) => sum + parseFloat(a.luwangCount || 0), 0);
+        // @ts-ignore
+        .filter(a => a.status === 'completed')
+        // @ts-ignore
+        .reduce((sum, a) => sum + parseFloat(a.luwangCount || 0), 0);
       
       // Calculate debt statistics
       const totalDebts = debts.length;
-      const pendingDebts = debts.filter((/** @type {{ status: string; }} */ d) => d.status === 'pending').length;
-      const paidDebts = debts.filter((/** @type {{ status: string; }} */ d) => d.status === 'paid').length;
+      // @ts-ignore
+      const pendingDebts = debts.filter(d => d.status === 'pending').length;
+      // @ts-ignore
+      const paidDebts = debts.filter(d => d.status === 'paid').length;
       
-      const totalDebtAmount = debts.reduce((/** @type {number} */ sum, /** @type {{ amount: any; }} */ d) => 
+      // @ts-ignore
+      const totalDebtAmount = debts.reduce((sum, d) => 
         sum + parseFloat(d.amount || 0), 0);
       
-      const totalDebtBalance = debts.reduce((/** @type {number} */ sum, /** @type {{ balance: any; }} */ d) => 
+      // @ts-ignore
+      const totalDebtBalance = debts.reduce((sum, d) => 
         sum + parseFloat(d.balance || 0), 0);
       
-      const totalDebtPaid = debts.reduce((/** @type {number} */ sum, /** @type {{ totalPaid: any; }} */ d) => 
+      // @ts-ignore
+      const totalDebtPaid = debts.reduce((sum, d) => 
         sum + parseFloat(d.totalPaid || 0), 0);
       
       // Calculate payment statistics
       const totalPayments = payments.length;
-      const totalPaymentAmount = payments.reduce((/** @type {number} */ sum, /** @type {{ netPay: any; }} */ p) => 
+      // @ts-ignore
+      const totalPaymentAmount = payments.reduce((sum, p) => 
         sum + parseFloat(p.netPay || 0), 0);
       
       // Calculate recent performance (last 7 days)
       const sevenDaysAgo = new Date(now);
       sevenDaysAgo.setDate(now.getDate() - 7);
       
-      const recentAssignments = assignments.filter((/** @type {{ assignmentDate: string | number | Date; }} */ a) => 
+      // @ts-ignore
+      const recentAssignments = assignments.filter(a => 
         new Date(a.assignmentDate) >= sevenDaysAgo
       );
       
-      const recentCompleted = recentAssignments.filter((/** @type {{ status: string; }} */ a) => a.status === 'completed').length;
+      // @ts-ignore
+      const recentCompleted = recentAssignments.filter(a => a.status === 'completed').length;
       const recentCompletionRate = recentAssignments.length > 0 
         ? (recentCompleted / recentAssignments.length) * 100 
         : 0;
@@ -412,7 +658,8 @@ class MobileDashboard {
         : 0;
       
       // Format assignments for display
-      const formattedAssignments = assignments.slice(0, 5).map((/** @type {{ id: any; luwangCount: string; status: string; assignmentDate: any; }} */ assignment) => ({
+      // @ts-ignore
+      const formattedAssignments = assignments.slice(0, 5).map(assignment => ({
         id: assignment.id,
         luwangCount: parseFloat(assignment.luwangCount),
         status: assignment.status,
@@ -422,7 +669,8 @@ class MobileDashboard {
       }));
       
       // Format debts for display
-      const formattedDebts = debts.slice(0, 5).map((/** @type {{ id: any; amount: string; balance: string; status: string; dateIncurred: any; dueDate: string | number | Date; }} */ debt) => ({
+      // @ts-ignore
+      const formattedDebts = debts.slice(0, 5).map(debt => ({
         id: debt.id,
         amount: parseFloat(debt.amount),
         balance: parseFloat(debt.balance),
@@ -434,7 +682,8 @@ class MobileDashboard {
       }));
       
       // Format payments for display
-      const formattedPayments = payments.slice(0, 5).map((/** @type {{ id: any; netPay: string; grossPay: string; paymentDate: any; status: any; }} */ payment) => ({
+      // @ts-ignore
+      const formattedPayments = payments.slice(0, 5).map(payment => ({
         id: payment.id,
         netPay: parseFloat(payment.netPay),
         grossPay: parseFloat(payment.grossPay),
@@ -511,6 +760,10 @@ class MobileDashboard {
               pendingDebts,
               activeAssignments
             )
+          },
+          filters: {
+            workerId: workerId,
+            currentSession: currentSession
           }
         }
       };
@@ -520,22 +773,39 @@ class MobileDashboard {
     }
   }
   
-  // Helper methods
+
   /**
-     * @param {{ debt: any; assignment: any; }} repositories
-     */
-  async getMobileAlerts(repositories) {
+   * @param {Object} repositories
+   * @param {{ currentSession: any; sessionId: any; }} params
+   */
+  async getMobileAlerts(repositories, params) {
+    // @ts-ignore
     const { debt: debtRepo, assignment: assignmentRepo } = repositories;
+    // @ts-ignore
+    const { currentSession = false, sessionId = null } = params;
+    
     const alerts = [];
     
     try {
-      // Check for overdue debts
-      const overdueDebts = await debtRepo.count({
+      // Check for overdue debts with session filter
+      let overdueDebtsQuery = debtRepo.count({
         where: {
           dueDate: { $lt: new Date() },
           status: { $in: ['pending', 'partially_paid'] }
         }
       });
+      
+      if (currentSession && sessionId) {
+        // @ts-ignore
+        overdueDebtsQuery = debtRepo
+          .createQueryBuilder("debt")
+          .where("debt.dueDate < :today", { today: new Date() })
+          .andWhere("debt.status IN (:...statuses)", { statuses: ['pending', 'partially_paid'] })
+          .andWhere("debt.session.id = :sessionId", { sessionId })
+          .getCount();
+      }
+      
+      const overdueDebts = await overdueDebtsQuery;
       
       if (overdueDebts > 0) {
         alerts.push({
@@ -546,17 +816,32 @@ class MobileDashboard {
         });
       }
       
-      // Check for assignments due today
+      // Check for assignments due today with session filter
       const today = new Date();
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
       
-      const assignmentsDueToday = await assignmentRepo.count({
+      let assignmentsDueTodayQuery = assignmentRepo.count({
         where: {
           assignmentDate: { $gte: today, $lt: tomorrow },
           status: 'active'
         }
       });
+      
+      if (currentSession && sessionId) {
+        // @ts-ignore
+        assignmentsDueTodayQuery = assignmentRepo
+          .createQueryBuilder("assignment")
+          .where("assignment.assignmentDate >= :today AND assignment.assignmentDate < :tomorrow", {
+            today,
+            tomorrow
+          })
+          .andWhere("assignment.status = :status", { status: 'active' })
+          .andWhere("assignment.session.id = :sessionId", { sessionId })
+          .getCount();
+      }
+      
+      const assignmentsDueToday = await assignmentsDueTodayQuery;
       
       if (assignmentsDueToday > 0) {
         alerts.push({
@@ -575,8 +860,10 @@ class MobileDashboard {
   }
   
   /**
-     * @param {string | number | Date} date
-     */
+   * Format time ago
+   * @param {string | number | Date} date - Date to format
+   * @returns {string} Formatted time string
+   */
   formatTimeAgo(date) {
     const now = new Date();
     const past = new Date(date);
@@ -594,10 +881,12 @@ class MobileDashboard {
   }
   
   /**
-     * @param {number} completionRate
-     * @param {number} debtBalance
-     * @param {number} totalDebt
-     */
+   * Calculate overall health score
+   * @param {number} completionRate - Assignment completion rate
+   * @param {number} debtBalance - Total debt balance
+   * @param {number} totalDebt - Total debt amount
+   * @returns {string} Health status
+   */
   calculateOverallHealth(completionRate, debtBalance, totalDebt) {
     let healthScore = 0;
     
@@ -618,11 +907,12 @@ class MobileDashboard {
     return 'needs_attention';
   }
   
+ 
   /**
-     * @param {number} pendingDebts
-     * @param {number} activeAssignments
-     * @param {number} completionRate
-     */
+   * @param {number} pendingDebts
+   * @param {number} activeAssignments
+   * @param {number} completionRate
+   */
   getPriorityActions(pendingDebts, activeAssignments, completionRate) {
     const actions = [];
     
@@ -646,10 +936,12 @@ class MobileDashboard {
   }
   
   /**
-     * @param {number} completionRate
-     * @param {number} averageLuwang
-     * @param {number} debtCollectionRate
-     */
+   * Calculate worker performance score
+   * @param {number} completionRate - Assignment completion rate
+   * @param {number} averageLuwang - Average luwang per assignment
+   * @param {number} debtCollectionRate - Debt collection rate
+   * @returns {number} Performance score
+   */
   calculateWorkerPerformance(completionRate, averageLuwang, debtCollectionRate) {
     let score = 0;
     
@@ -666,11 +958,12 @@ class MobileDashboard {
     return Math.round(score);
   }
   
+
   /**
-     * @param {number} pendingDebts
-     * @param {number} activeAssignments
-     * @param {number} completionRate
-     */
+   * @param {number} pendingDebts
+   * @param {number} activeAssignments
+   * @param {number} completionRate
+   */
   getWorkerAlerts(pendingDebts, activeAssignments, completionRate) {
     const alerts = [];
     
@@ -702,10 +995,12 @@ class MobileDashboard {
   }
   
   /**
-     * @param {string} status
-     * @param {number} pendingDebts
-     * @param {number} activeAssignments
-     */
+   * Get worker overall status
+   * @param {string} status - Worker status
+   * @param {number} pendingDebts - Number of pending debts
+   * @param {number} activeAssignments - Number of active assignments
+   * @returns {string} Overall status
+   */
   getWorkerOverallStatus(status, pendingDebts, activeAssignments) {
     if (status !== 'active') return 'inactive';
     

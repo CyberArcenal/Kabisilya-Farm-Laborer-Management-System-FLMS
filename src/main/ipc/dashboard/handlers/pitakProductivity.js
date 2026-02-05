@@ -2,21 +2,27 @@
 // @ts-check
 
 const { logger } = require("../../../../utils/logger");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
 class PitakProductivityHandler {
   /**
    * Get overall pitak productivity summary
-   * @param {Object} repositories - All repositories
+   * @param {Object} repositories - Repository objects
    * @param {Object} params - Query parameters
    * @returns {Promise<Object>} Pitak productivity overview
    */
   async getPitakProductivityOverview(repositories, params) {
     try {
       // @ts-ignore
-      // @ts-ignore
       const { pitak, assignment, payment } = repositories;
       // @ts-ignore
-      const { bukidId, status = "active" } = params;
+      const { bukidId, status = "active", currentSession = false } = params;
+      
+      // Get current session ID if requested
+      let sessionId = null;
+      if (currentSession) {
+        sessionId = await farmSessionDefaultSessionId();
+      }
 
       let query = pitak
         .createQueryBuilder("p")
@@ -45,18 +51,23 @@ class PitakProductivityHandler {
         query.andWhere("b.id = :bukidId", { bukidId });
       }
 
-
       if (status) {
         query.andWhere("p.status = :status", { status });
+      }
+      
+      // Apply session filter if needed
+      if (currentSession && sessionId) {
+        query.innerJoin("p.bukid", "bukid_session")
+          .innerJoin("bukid_session.session", "session")
+          .andWhere("session.id = :sessionId", { sessionId });
       }
 
       const pitaks = await query.getRawMany();
 
       // Calculate productivity metrics
       const productivityData = pitaks.map(
-        (
-          /** @type {{ totalCompletedLuwang: string; totalActiveLuwang: string; assignmentCount: string; p_id: any; p_location: any; p_status: any; p_total_luwang: string; bukidName: any; }} */ p,
-        ) => {
+        // @ts-ignore
+        (p) => {
           const completedLuwang = parseFloat(p.totalCompletedLuwang) || 0;
           const activeLuwang = parseFloat(p.totalActiveLuwang) || 0;
           const totalAssignments = parseInt(p.assignmentCount) || 0;
@@ -98,40 +109,39 @@ class PitakProductivityHandler {
           summary: {
             totalPitaks: pitaks.length,
             activePitaks: pitaks.filter(
-              (/** @type {{ p_status: string; }} */ p) =>
-                p.p_status === "active",
+              // @ts-ignore
+              (p) => p.p_status === "active",
             ).length,
             harvestedPitaks: pitaks.filter(
-              (/** @type {{ p_status: string; }} */ p) =>
-                p.p_status === "completed",
+              // @ts-ignore
+              (p) => p.p_status === "completed",
             ).length,
             totalCompletedLuwang: productivityData.reduce(
-              (
-                /** @type {any} */ sum,
-                /** @type {{ metrics: { completedLuwang: any; }; }} */ p,
-              ) => sum + p.metrics.completedLuwang,
+              // @ts-ignore
+              (sum, p) => sum + p.metrics.completedLuwang,
               0,
             ),
             averageCompletionRate:
               productivityData.reduce(
-                (
-                  /** @type {any} */ sum,
-                  /** @type {{ metrics: { completionRate: any; }; }} */ p,
-                ) => sum + p.metrics.completionRate,
+                // @ts-ignore
+                (sum, p) => sum + p.metrics.completionRate,
                 0,
               ) / productivityData.length || 0,
             averageUtilization:
               productivityData.reduce(
-                (
-                  /** @type {any} */ sum,
-                  /** @type {{ metrics: { utilization: any; }; }} */ p,
-                ) => sum + p.metrics.utilization,
+                // @ts-ignore
+                (sum, p) => sum + p.metrics.utilization,
                 0,
               ) / productivityData.length || 0,
           },
           pitaks: productivityData,
           financial: financialProductivity.data?.summary || {},
           topPerformers: this.identifyTopPerformers(productivityData),
+          filters: {
+            bukidId: bukidId || null,
+            status: status,
+            currentSession: currentSession
+          }
         },
       };
     } catch (error) {
@@ -143,27 +153,33 @@ class PitakProductivityHandler {
 
   /**
    * Get detailed productivity analysis for a specific pitak
-   * @param {Object} repositories - All repositories
+   * @param {Object} repositories - Repository objects
    * @param {Object} params - Query parameters
    * @returns {Promise<Object>} Detailed pitak productivity
    */
   async getPitakProductivityDetails(repositories, params) {
     try {
       // @ts-ignore
-      const { pitakId } = params;
+      const { pitakId, currentSession = false } = params;
       if (!pitakId) {
         throw new Error("pitakId is required");
       }
 
       // @ts-ignore
-      // @ts-ignore
       const { pitak, assignment, payment, worker } = repositories;
+      
+      // Get current session ID if requested
+      let sessionId = null;
+      if (currentSession) {
+        sessionId = await farmSessionDefaultSessionId();
+      }
 
       // Get pitak information
       const pitakInfo = await pitak.findOne({
         where: { id: pitakId },
         relations: [
           "bukid",
+          "bukid.session",
           "assignments",
           "assignments.worker",
         ],
@@ -171,6 +187,11 @@ class PitakProductivityHandler {
 
       if (!pitakInfo) {
         throw new Error("Pitak not found");
+      }
+      
+      // Apply session filter if needed
+      if (currentSession && sessionId && pitakInfo.bukid?.session?.id !== sessionId) {
+        throw new Error("Pitak does not belong to the current session");
       }
 
       // Get assignments for this pitak
@@ -189,13 +210,13 @@ class PitakProductivityHandler {
       // Get production timeline
       const productionTimeline = await this.getPitakProductionTimeline(
         repositories,
-        { pitakId },
+        { pitakId, currentSession },
       );
 
       // Get financial productivity
       const financialProductivity = await this.getPitakFinancialProductivity(
         repositories,
-        { pitakId },
+        { pitakId, currentSession },
       );
 
       // Calculate KPIs
@@ -211,6 +232,7 @@ class PitakProductivityHandler {
             status: pitakInfo.status,
             totalLuwang: pitakInfo.totalLuwang,
             bukid: pitakInfo.bukid?.name,
+            session: pitakInfo.bukid?.session?.id || null,
             createdAt: pitakInfo.createdAt,
             updatedAt: pitakInfo.updatedAt,
           },
@@ -226,6 +248,10 @@ class PitakProductivityHandler {
             kpis,
             assignmentProductivity,
           ),
+          filters: {
+            pitakId: pitakId,
+            currentSession: currentSession
+          }
         },
       };
     } catch (error) {
@@ -237,16 +263,22 @@ class PitakProductivityHandler {
 
   /**
    * Get pitak production trend over time
-   * @param {Object} repositories - All repositories
+   * @param {Object} repositories - Repository objects
    * @param {Object} params - Query parameters
    * @returns {Promise<Object>} Production trend data
    */
   async getPitakProductionTimeline(repositories, params) {
     try {
       // @ts-ignore
-      const { pitakId, period = "monthly", limit = 12 } = params;
+      const { pitakId, period = "monthly", limit = 12, currentSession = false } = params;
       // @ts-ignore
       const { assignment } = repositories;
+      
+      // Get current session ID if requested
+      let sessionId = null;
+      if (currentSession) {
+        sessionId = await farmSessionDefaultSessionId();
+      }
 
       const query = assignment
         .createQueryBuilder("a")
@@ -262,19 +294,24 @@ class PitakProductivityHandler {
           "SUM(CASE WHEN a.status = 'active' THEN 1 ELSE 0 END)",
           "activeAssignments",
         )
-        .where("a.pitak = :pitakId", { pitakId: pitakId || null })
-        .groupBy(this.getDateGrouping(period, "a.assignmentDate", "period"))
-        .orderBy("period", "DESC")
-        .limit(limit);
+        .where("a.pitak = :pitakId", { pitakId: pitakId || null });
+      
+      // Apply session filter if needed
+      if (currentSession && sessionId) {
+        query.andWhere("a.session.id = :sessionId", { sessionId });
+      }
 
-      const timelineData = await query.getRawMany();
+      const timelineData = await query
+        .groupBy(this.getDateGrouping(period, "a.assignmentDate", "period"))
+        .orderBy("period", "ASC")
+        .limit(limit)
+        .getRawMany();
 
       // Calculate productivity trends
       const timeline = timelineData
         .map(
-          (
-            /** @type {{ totalLuwang: string; assignmentCount: string; completedAssignments: string; period: any; activeAssignments: string; avgLuwangPerAssignment: string; }} */ periodData,
-          ) => {
+          // @ts-ignore
+          (periodData) => {
             const totalLuwang = parseFloat(periodData.totalLuwang) || 0;
             const assignmentCount = parseInt(periodData.assignmentCount) || 0;
             const completedAssignments =
@@ -313,18 +350,14 @@ class PitakProductivityHandler {
             totalPeriods: timeline.length,
             averageLuwangPerPeriod:
               timeline.reduce(
-                (
-                  /** @type {any} */ sum,
-                  /** @type {{ metrics: { totalLuwang: any; }; }} */ p,
-                ) => sum + p.metrics.totalLuwang,
+                // @ts-ignore
+                (sum, p) => sum + p.metrics.totalLuwang,
                 0,
               ) / timeline.length || 0,
             averageProductivityIndex:
               timeline.reduce(
-                (
-                  /** @type {any} */ sum,
-                  /** @type {{ metrics: { productivityIndex: any; }; }} */ p,
-                ) => sum + p.metrics.productivityIndex,
+                // @ts-ignore
+                (sum, p) => sum + p.metrics.productivityIndex,
                 0,
               ) / timeline.length || 0,
             trendDirection:
@@ -334,6 +367,12 @@ class PitakProductivityHandler {
                   ? "declining"
                   : "stable",
           },
+          filters: {
+            pitakId: pitakId || null,
+            period: period,
+            limit: limit,
+            currentSession: currentSession
+          }
         },
       };
     } catch (error) {
@@ -345,25 +384,29 @@ class PitakProductivityHandler {
 
   /**
    * Get worker productivity comparison for pitak
-   * @param {Object} repositories - All repositories
+   * @param {Object} repositories - Repository objects
    * @param {Object} params - Query parameters
    * @returns {Promise<Object>} Worker productivity data
    */
   async getPitakWorkerProductivity(repositories, params) {
     try {
       // @ts-ignore
-      // @ts-ignore
-      const { pitakId, period } = params;
+      const { pitakId, period, currentSession = false } = params;
       if (!pitakId) {
         throw new Error("pitakId is required");
       }
 
       // @ts-ignore
-      // @ts-ignore
       const { assignment, worker } = repositories;
+      
+      // Get current session ID if requested
+      let sessionId = null;
+      if (currentSession) {
+        sessionId = await farmSessionDefaultSessionId();
+      }
 
       // Get worker productivity data
-      const workerProductivity = await assignment
+      const workerProductivityQuery = assignment
         .createQueryBuilder("a")
         .leftJoin("a.worker", "w")
         .select([
@@ -378,16 +421,22 @@ class PitakProductivityHandler {
           "MIN(a.assignmentDate) as firstAssignment",
           "MAX(a.assignmentDate) as lastAssignment",
         ])
-        .where("a.pitak = :pitakId", { pitakId })
+        .where("a.pitak = :pitakId", { pitakId });
+      
+      // Apply session filter if needed
+      if (currentSession && sessionId) {
+        workerProductivityQuery.andWhere("a.session.id = :sessionId", { sessionId });
+      }
+
+      const workerProductivity = await workerProductivityQuery
         .groupBy("w.id")
         .orderBy("totalLuwang", "DESC")
         .getRawMany();
 
       // Calculate productivity metrics
       const productivityMetrics = workerProductivity.map(
-        (
-          /** @type {{ totalLuwang: string; completedLuwang: string; totalAssignments: string; completedAssignments: string; workerId: any; workerName: any; workerStatus: any; avgLuwangPerAssignment: string; firstAssignment: string | number | Date; lastAssignment: string | number | Date; }} */ w,
-        ) => {
+        // @ts-ignore
+        (w) => {
           const totalLuwang = parseFloat(w.totalLuwang) || 0;
           const completedLuwang = parseFloat(w.completedLuwang) || 0;
           const totalAssignments = parseInt(w.totalAssignments) || 0;
@@ -419,8 +468,7 @@ class PitakProductivityHandler {
               lastAssignment: w.lastAssignment,
               daysActive:
                 w.firstAssignment && w.lastAssignment
-                  ? // @ts-ignore
-                    Math.ceil(
+                  ? Math.ceil(
                       // @ts-ignore
                       (new Date(w.lastAssignment) -
                         // @ts-ignore
@@ -447,18 +495,14 @@ class PitakProductivityHandler {
             totalWorkers: productivityMetrics.length,
             averageCompletionRate:
               productivityMetrics.reduce(
-                (
-                  /** @type {any} */ sum,
-                  /** @type {{ assignments: { completionRate: any; }; }} */ w,
-                ) => sum + w.assignments.completionRate,
+                // @ts-ignore
+                (sum, w) => sum + w.assignments.completionRate,
                 0,
               ) / productivityMetrics.length || 0,
             averageLuwangPerWorker:
               productivityMetrics.reduce(
-                (
-                  /** @type {any} */ sum,
-                  /** @type {{ luwang: { total: any; }; }} */ w,
-                ) => sum + w.luwang.total,
+                // @ts-ignore
+                (sum, w) => sum + w.luwang.total,
                 0,
               ) / productivityMetrics.length || 0,
             topPerformer:
@@ -467,18 +511,23 @@ class PitakProductivityHandler {
           },
           benchmarks: {
             highEfficiency: productivityMetrics.filter(
-              (/** @type {{ productivityScore: number; }} */ w) =>
-                w.productivityScore >= 80,
+              // @ts-ignore
+              (w) => w.productivityScore >= 80,
             ).length,
             mediumEfficiency: productivityMetrics.filter(
-              (/** @type {{ productivityScore: number; }} */ w) =>
-                w.productivityScore >= 60 && w.productivityScore < 80,
+              // @ts-ignore
+              (w) => w.productivityScore >= 60 && w.productivityScore < 80,
             ).length,
             lowEfficiency: productivityMetrics.filter(
-              (/** @type {{ productivityScore: number; }} */ w) =>
-                w.productivityScore < 60,
+              // @ts-ignore
+              (w) => w.productivityScore < 60,
             ).length,
           },
+          filters: {
+            pitakId: pitakId,
+            period: period || null,
+            currentSession: currentSession
+          }
         },
       };
     } catch (error) {
@@ -490,20 +539,26 @@ class PitakProductivityHandler {
 
   /**
    * Get pitak efficiency analysis
-   * @param {Object} repositories - All repositories
+   * @param {Object} repositories - Repository objects
    * @param {Object} params - Query parameters
    * @returns {Promise<Object>} Efficiency analysis
    */
   async getPitakEfficiencyAnalysis(repositories, params) {
     try {
       // @ts-ignore
-      const { pitakId, comparisonPeriods = 3 } = params;
+      const { pitakId, comparisonPeriods = 3, currentSession = false } = params;
       if (!pitakId) {
         throw new Error("pitakId is required");
       }
 
       // @ts-ignore
       const { pitak, assignment, payment } = repositories;
+      
+      // Get current session ID if requested
+      let sessionId = null;
+      if (currentSession) {
+        sessionId = await farmSessionDefaultSessionId();
+      }
 
       // Get pitak information
       const pitakInfo = await pitak.findOne({ where: { id: pitakId } });
@@ -513,17 +568,42 @@ class PitakProductivityHandler {
       }
 
       // Get assignments for efficiency calculation
-      const assignments = await assignment.find({
+      let assignmentsQuery = assignment.find({
         where: { pitak: { id: pitakId } },
         relations: ["worker"],
         order: { assignmentDate: "DESC" },
       });
+      
+      if (currentSession && sessionId) {
+        // @ts-ignore
+        assignmentsQuery = assignment
+          .createQueryBuilder("assignment")
+          .leftJoin("assignment.worker", "worker")
+          .where("assignment.pitak.id = :pitakId", { pitakId })
+          .andWhere("assignment.session.id = :sessionId", { sessionId })
+          .orderBy("assignment.assignmentDate", "DESC")
+          .getMany();
+      }
+
+      const assignments = await assignmentsQuery;
 
       // Get payments for this pitak
-      const payments = await payment.find({
+      let paymentsQuery = payment.find({
         where: { pitak: { id: pitakId } },
         relations: ["worker"],
       });
+      
+      if (currentSession && sessionId) {
+        // @ts-ignore
+        paymentsQuery = payment
+          .createQueryBuilder("payment")
+          .leftJoin("payment.worker", "worker")
+          .where("payment.pitak.id = :pitakId", { pitakId })
+          .andWhere("payment.session.id = :sessionId", { sessionId })
+          .getMany();
+      }
+
+      const payments = await paymentsQuery;
 
       // Calculate efficiency metrics
       const efficiencyMetrics = this.calculateEfficiencyMetrics(
@@ -538,13 +618,14 @@ class PitakProductivityHandler {
         {
           pitakId,
           periods: comparisonPeriods,
+          currentSession,
         },
       );
 
       // Calculate productivity benchmarks
       const benchmarks = await this.calculateProductivityBenchmarks(
         repositories,
-        { pitakId },
+        { pitakId, currentSession },
       );
 
       // Generate efficiency insights
@@ -573,6 +654,11 @@ class PitakProductivityHandler {
             insights,
           ),
           score: this.calculateOverallEfficiencyScore(efficiencyMetrics),
+          filters: {
+            pitakId: pitakId,
+            comparisonPeriods: comparisonPeriods,
+            currentSession: currentSession
+          }
         },
       };
     } catch (error) {
@@ -584,45 +670,56 @@ class PitakProductivityHandler {
 
   /**
    * Compare multiple pitaks productivity
-   * @param {Object} repositories - All repositories
+   * @param {Object} repositories - Repository objects
    * @param {Object} params - Query parameters
    * @returns {Promise<Object>} Pitak comparison data
    */
   async comparePitaksProductivity(repositories, params) {
     try {
       // @ts-ignore
-      // @ts-ignore
-      const { pitakIds = [], metrics = [], period = "monthly" } = params;
+      const { pitakIds = [], metrics = [], period = "monthly", currentSession = false } = params;
 
       if (!pitakIds.length) {
         throw new Error("At least one pitakId is required");
       }
+      
+      // Get current session ID if requested
+      let sessionId = null;
+      if (currentSession) {
+        sessionId = await farmSessionDefaultSessionId();
+      }
 
       const comparisonResults = await Promise.all(
-        pitakIds.map(async (/** @type {any} */ pitakId) => {
+        // @ts-ignore
+        pitakIds.map(async (pitakId) => {
           // Get pitak info
           // @ts-ignore
           const pitakInfo = await repositories.pitak.findOne({
             where: { id: pitakId },
-            relations: ["bukid"],
+            relations: ["bukid", "bukid.session"],
           });
+          
+          // Check session filter
+          if (currentSession && sessionId && pitakInfo?.bukid?.session?.id !== sessionId) {
+            return null; // Skip pitaks not in current session
+          }
 
           // Get productivity data
           const productivity = await this.getPitakProductivityOverview(
             repositories,
-            { pitakId },
+            { pitakId, currentSession },
           );
 
           // Get efficiency data
           const efficiency = await this.getPitakEfficiencyAnalysis(
             repositories,
-            { pitakId },
+            { pitakId, currentSession },
           );
 
           // Get financial productivity
           const financial = await this.getPitakFinancialProductivity(
             repositories,
-            { pitakId },
+            { pitakId, currentSession },
           );
 
           return {
@@ -631,6 +728,7 @@ class PitakProductivityHandler {
               location: pitakInfo?.location,
               status: pitakInfo?.status,
               bukid: pitakInfo?.bukid?.name,
+              session: pitakInfo?.bukid?.session?.id || null,
             },
             // @ts-ignore
             productivity: productivity.data?.summary || {},
@@ -643,9 +741,13 @@ class PitakProductivityHandler {
         }),
       );
 
+      // Filter out null results (pitaks not in current session)
+      // @ts-ignore
+      const validResults = comparisonResults.filter(result => result !== null);
+
       // Calculate rankings and percentiles
       const rankedComparison = this.rankPitakComparison(
-        comparisonResults,
+        validResults,
         metrics,
       );
 
@@ -659,27 +761,27 @@ class PitakProductivityHandler {
           pitaks: rankedComparison,
           summary: {
             averageScore:
-              comparisonResults.reduce(
-                (/** @type {any} */ sum, /** @type {{ score: any; }} */ p) =>
-                  sum + p.score,
+              validResults.reduce(
+                // @ts-ignore
+                (sum, p) => sum + p.score,
                 0,
-              ) / comparisonResults.length,
-            // @ts-ignore
+              ) / validResults.length || 0,
             bestPerformer: rankedComparison.find(
-              // @ts-ignore
-              (/** @type {{ rankings: { overallRank: number; }; }} */ p) =>
-                p.rankings.overallRank === 1,
+              (p) => p.rankings.overallRank === 1,
             ),
-            // @ts-ignore
             worstPerformer: rankedComparison.find(
-              // @ts-ignore
-              (/** @type {{ rankings: { overallRank: any; }; }} */ p) =>
-                p.rankings.overallRank === comparisonResults.length,
+              (p) => p.rankings.overallRank === validResults.length,
             ),
-            consistency: this.calculateConsistencyScore(comparisonResults),
+            consistency: this.calculateConsistencyScore(validResults),
           },
           insights,
           metricsComparison: this.compareMetricsAcrossPitaks(rankedComparison),
+          filters: {
+            pitakIds: pitakIds,
+            metrics: metrics,
+            period: period,
+            currentSession: currentSession
+          }
         },
       };
     } catch (error) {
@@ -691,14 +793,20 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Get pitak financial productivity
-   * @param {Object} repositories
-   * @param {Object} params
+   * @param {Object} repositories - Repository objects
+   * @param {Object} params - Query parameters
    */
   async getPitakFinancialProductivity(repositories, params) {
     // @ts-ignore
-    const { pitakId } = params;
+    const { pitakId, currentSession = false } = params;
     // @ts-ignore
     const { payment } = repositories;
+    
+    // Get current session ID if requested
+    let sessionId = null;
+    if (currentSession) {
+      sessionId = await farmSessionDefaultSessionId();
+    }
 
     const query = payment
       .createQueryBuilder("p")
@@ -711,6 +819,11 @@ class PitakProductivityHandler {
         "AVG(p.netPay) as avgNetPay",
       ])
       .where("p.pitak = :pitakId", { pitakId: pitakId || null });
+    
+    // Apply session filter if needed
+    if (currentSession && sessionId) {
+      query.andWhere("p.session.id = :sessionId", { sessionId });
+    }
 
     const result = await query.getRawOne();
 
@@ -732,33 +845,35 @@ class PitakProductivityHandler {
                 100
               : 0,
         },
+        filters: {
+          pitakId: pitakId || null,
+          currentSession: currentSession
+        }
       },
     };
   }
 
   /**
    * Helper: Calculate assignment productivity
-   * @param {any[]} assignments
+   * @param {any[]} assignments - Array of assignments
    */
   calculateAssignmentProductivity(assignments) {
     const completed = assignments.filter(
-      (/** @type {{ status: string; }} */ a) => a.status === "completed",
+      (a) => a.status === "completed",
     );
     const active = assignments.filter(
-      (/** @type {{ status: string; }} */ a) => a.status === "active",
+      (a) => a.status === "active",
     );
     const cancelled = assignments.filter(
-      (/** @type {{ status: string; }} */ a) => a.status === "cancelled",
+      (a) => a.status === "cancelled",
     );
 
     const totalLuwang = assignments.reduce(
-      (/** @type {number} */ sum, /** @type {{ luwangCount: string; }} */ a) =>
-        sum + parseFloat(a.luwangCount),
+      (sum, a) => sum + parseFloat(a.luwangCount),
       0,
     );
     const completedLuwang = completed.reduce(
-      (/** @type {number} */ sum, /** @type {{ luwangCount: string; }} */ a) =>
-        sum + parseFloat(a.luwangCount),
+      (sum, a) => sum + parseFloat(a.luwangCount),
       0,
     );
 
@@ -783,8 +898,8 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Get worker performance for pitak
-   * @param {Object} repositories
-   * @param {any} pitakId
+   * @param {Object} repositories - Repository objects
+   * @param {any} pitakId - Pitak ID
    */
   async getWorkerPerformanceForPitak(repositories, pitakId) {
     // @ts-ignore
@@ -805,9 +920,8 @@ class PitakProductivityHandler {
       .getRawMany();
 
     return workerPerformance.map(
-      (
-        /** @type {{ w_id: any; w_name: any; assignmentCount: string; totalLuwang: string; avgLuwang: string; }} */ w,
-      ) => ({
+      // @ts-ignore
+      (w) => ({
         workerId: w.w_id,
         workerName: w.w_name,
         assignmentCount: parseInt(w.assignmentCount),
@@ -819,16 +933,15 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Calculate pitak KPIs
-   * @param {any[]} assignments
-   * @param {{ totalLuwang: string; }} pitakInfo
+   * @param {any[]} assignments - Array of assignments
+   * @param {{ totalLuwang: string; }} pitakInfo - Pitak information
    */
   calculatePitakKPIs(assignments, pitakInfo) {
     const completedAssignments = assignments.filter(
-      (/** @type {{ status: string; }} */ a) => a.status === "completed",
+      (a) => a.status === "completed",
     );
     const completedLuwang = completedAssignments.reduce(
-      (/** @type {number} */ sum, /** @type {{ luwangCount: string; }} */ a) =>
-        sum + parseFloat(a.luwangCount),
+      (sum, a) => sum + parseFloat(a.luwangCount),
       0,
     );
 
@@ -847,18 +960,17 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Calculate luwang per day
-   * @param {any[]} assignments
+   * @param {any[]} assignments - Array of assignments
    */
   calculateLuwangPerDay(assignments) {
     const completedAssignments = assignments.filter(
-      (/** @type {{ status: string; }} */ a) => a.status === "completed",
+      (a) => a.status === "completed",
     );
     if (completedAssignments.length === 0) return 0;
 
     const dates = completedAssignments
       .map(
-        (/** @type {{ assignmentDate: string | number | Date; }} */ a) =>
-          new Date(a.assignmentDate),
+        (a) => new Date(a.assignmentDate),
       )
       .filter(Boolean);
     if (dates.length === 0) return 0;
@@ -867,14 +979,12 @@ class PitakProductivityHandler {
     const minDate = new Date(Math.min(...dates));
     // @ts-ignore
     const maxDate = new Date(Math.max(...dates));
-    // @ts-ignore
     const daysDiff =
       // @ts-ignore
       Math.ceil((maxDate - minDate) / (1000 * 60 * 60 * 24)) || 1;
 
     const totalLuwang = completedAssignments.reduce(
-      (/** @type {number} */ sum, /** @type {{ luwangCount: string; }} */ a) =>
-        sum + parseFloat(a.luwangCount),
+      (sum, a) => sum + parseFloat(a.luwangCount),
       0,
     );
     return totalLuwang / daysDiff;
@@ -882,13 +992,13 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Calculate worker turnover
-   * @param {any[]} assignments
+   * @param {any[]} assignments - Array of assignments
    */
   calculateWorkerTurnover(assignments) {
     const workerIds = [
       ...new Set(
         assignments
-          .map((/** @type {{ worker: { id: any; }; }} */ a) => a.worker?.id)
+          .map((a) => a.worker?.id)
           .filter(Boolean),
       ),
     ];
@@ -897,19 +1007,15 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Calculate cost per luwang
-   * @param {any[]} assignments
+   * @param {any[]} assignments - Array of assignments
    */
   calculateCostPerLuwang(assignments) {
-    // This would need actual cost data - placeholder implementation
     const completedLuwang = assignments
       .filter(
-        (/** @type {{ status: string; }} */ a) => a.status === "completed",
+        (a) => a.status === "completed",
       )
       .reduce(
-        (
-          /** @type {number} */ sum,
-          /** @type {{ luwangCount: string; }} */ a,
-        ) => sum + parseFloat(a.luwangCount),
+        (sum, a) => sum + parseFloat(a.luwangCount),
         0,
       );
 
@@ -920,8 +1026,8 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Generate productivity recommendations
-   * @param {{ landUtilization: any; assignmentEfficiency?: number; luwangPerDay: any; workerTurnover?: number; costPerLuwang?: number; }} kpis
-   * @param {{ totalAssignments?: any; completedAssignments?: any; activeAssignments?: any; cancelledAssignments?: any; completionRate: any; luwangProductivity?: { total: any; completed: any; pending: number; completionRate: number; }; }} assignmentProductivity
+   * @param {{ landUtilization: any; assignmentEfficiency?: number; luwangPerDay: any; workerTurnover?: number; costPerLuwang?: number; }} kpis - Pitak KPIs
+   * @param {{ totalAssignments?: any; completedAssignments?: any; activeAssignments?: any; cancelledAssignments?: any; completionRate: any; luwangProductivity?: { total: any; completed: any; pending: number; completionRate: number; }; }} assignmentProductivity - Assignment productivity
    */
   generateProductivityRecommendations(kpis, assignmentProductivity) {
     const recommendations = [];
@@ -960,8 +1066,9 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Get date grouping for SQL
-   * @param {any} period
-   * @param {string} column
+   * @param {any} period - Time period
+   * @param {string} column - Database column
+   * @param {string} alias - Column alias
    */
   getDateGrouping(period, column, alias = "period") {
     switch (period) {
@@ -982,7 +1089,7 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Analyze production trend
-   * @param {any[]} timeline
+   * @param {any[]} timeline - Timeline data
    */
   analyzeProductionTrend(timeline) {
     if (timeline.length < 2) {
@@ -995,8 +1102,7 @@ class PitakProductivityHandler {
     }
 
     const luwangValues = timeline.map(
-      (/** @type {{ metrics: { totalLuwang: any; }; }} */ p) =>
-        p.metrics.totalLuwang,
+      (p) => p.metrics.totalLuwang,
     );
     const firstValue = luwangValues[0];
     const lastValue = luwangValues[luwangValues.length - 1];
@@ -1032,7 +1138,7 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Calculate worker productivity score
-   * @param {{ completedAssignments: string; totalAssignments: string; completedLuwang: string; totalLuwang: string; avgLuwangPerAssignment: string; }} workerData
+   * @param {{ completedAssignments: string; totalAssignments: string; completedLuwang: string; totalLuwang: string; avgLuwangPerAssignment: string; }} workerData - Worker data
    */
   calculateWorkerProductivityScore(workerData) {
     const completionRate =
@@ -1055,20 +1161,20 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Calculate productivity distribution
-   * @param {any[]} workers
+   * @param {any[]} workers - Worker data array
    */
   calculateProductivityDistribution(workers) {
     const scores = workers.map(
-      (/** @type {{ productivityScore: any; }} */ w) => w.productivityScore,
+      (w) => w.productivityScore,
     );
     return {
-      high: scores.filter((/** @type {number} */ s) => s >= 80).length,
-      medium: scores.filter((/** @type {number} */ s) => s >= 60 && s < 80)
+      high: scores.filter((s) => s >= 80).length,
+      medium: scores.filter((s) => s >= 60 && s < 80)
         .length,
-      low: scores.filter((/** @type {number} */ s) => s < 60).length,
+      low: scores.filter((s) => s < 60).length,
       averageScore:
         scores.reduce(
-          (/** @type {any} */ sum, /** @type {any} */ s) => sum + s,
+          (sum, s) => sum + s,
           0,
         ) / scores.length || 0,
       distribution: scores,
@@ -1077,22 +1183,20 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Calculate efficiency metrics
-   * @param {any[]} assignments
-   * @param {any[]} payments
-   * @param {{ totalLuwang: string; }} pitakInfo
+   * @param {any[]} assignments - Array of assignments
+   * @param {any[]} payments - Array of payments
+   * @param {{ totalLuwang: string; }} pitakInfo - Pitak information
    */
   calculateEfficiencyMetrics(assignments, payments, pitakInfo) {
     const completedAssignments = assignments.filter(
-      (/** @type {{ status: string; }} */ a) => a.status === "completed",
+      (a) => a.status === "completed",
     );
     const completedLuwang = completedAssignments.reduce(
-      (/** @type {number} */ sum, /** @type {{ luwangCount: string; }} */ a) =>
-        sum + parseFloat(a.luwangCount),
+      (sum, a) => sum + parseFloat(a.luwangCount),
       0,
     );
     const totalPayments = payments.reduce(
-      (/** @type {number} */ sum, /** @type {{ netPay: string; }} */ p) =>
-        sum + parseFloat(p.netPay),
+      (sum, p) => sum + parseFloat(p.netPay),
       0,
     );
 
@@ -1114,37 +1218,36 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Calculate time efficiency
-   * @param {any[]} assignments
+   * @param {any[]} assignments - Array of assignments
    */
   calculateTimeEfficiency(assignments) {
     const completedAssignments = assignments.filter(
-      (/** @type {{ status: string; }} */ a) => a.status === "completed",
+      (a) => a.status === "completed",
     );
     if (completedAssignments.length === 0) return 0;
 
     const assignmentDurations = completedAssignments
       .map(
         (
-          /** @type {{ assignmentDate: string | number | Date; updatedAt: string | number | Date; }} */ a,
+          a,
         ) => {
           const assignedDate = new Date(a.assignmentDate);
           const completedDate = a.updatedAt
             ? new Date(a.updatedAt)
             : new Date();
-          // @ts-ignore
           return Math.ceil(
             // @ts-ignore
             (completedDate - assignedDate) / (1000 * 60 * 60 * 24),
           );
         },
       )
-      .filter((/** @type {number} */ duration) => duration > 0);
+      .filter((duration) => duration > 0);
 
     if (assignmentDurations.length === 0) return 0;
 
     const avgDuration =
       assignmentDurations.reduce(
-        (/** @type {any} */ sum, /** @type {any} */ d) => sum + d,
+        (sum, d) => sum + d,
         0,
       ) / assignmentDurations.length;
     return 100 - Math.min(avgDuration * 10, 100); // Inverse: shorter duration = higher efficiency
@@ -1152,32 +1255,27 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Calculate resource utilization
-   * @param {any[]} assignments
-   * @param {{ totalLuwang: string; }} pitakInfo
+   * @param {any[]} assignments - Array of assignments
+   * @param {{ totalLuwang: string; }} pitakInfo - Pitak information
    */
   calculateResourceUtilization(assignments, pitakInfo) {
     const workerCount = new Set(
       assignments
-        .map((/** @type {{ worker: { id: any; }; }} */ a) => a.worker?.id)
+        .map((a) => a.worker?.id)
         .filter(Boolean),
     ).size;
-    // @ts-ignore
     // @ts-ignore
     const luwangPerWorker =
       workerCount > 0
         ? assignments.reduce(
-            (
-              /** @type {number} */ sum,
-              /** @type {{ luwangCount: string; }} */ a,
-            ) => sum + parseFloat(a.luwangCount),
+            (sum, a) => sum + parseFloat(a.luwangCount),
             0,
           ) / workerCount
         : 0;
 
     const maxCapacity = parseFloat(pitakInfo.totalLuwang) * 0.8; // Assume 80% is optimal
     const actualCapacity = assignments.reduce(
-      (/** @type {number} */ sum, /** @type {{ luwangCount: string; }} */ a) =>
-        sum + parseFloat(a.luwangCount),
+      (sum, a) => sum + parseFloat(a.luwangCount),
       0,
     );
 
@@ -1186,49 +1284,122 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Get historical efficiency trends
-   * @param {Object} repositories
-   * @param {{ pitakId: any; periods: any; }} params
+   * @param {Object} repositories - Repository objects
+   * @param {{ pitakId: any; periods: any; currentSession: boolean; }} params - Query parameters
    */
-  // @ts-ignore
-  // @ts-ignore
   async getHistoricalEfficiencyTrends(repositories, params) {
-    // Simplified implementation - would need more complex historical data
+    const { pitakId, periods, currentSession = false } = params;
+    // @ts-ignore
+    const { assignment } = repositories;
+    
+    // Get current session ID if requested
+    let sessionId = null;
+    if (currentSession) {
+      sessionId = await farmSessionDefaultSessionId();
+    }
+
+    // Get assignments for the specified number of periods
+    const assignmentsQuery = assignment
+      .createQueryBuilder("a")
+      .select([
+        "STRFTIME('%Y-%m', a.assignmentDate) as period",
+        "SUM(CASE WHEN a.status = 'completed' THEN a.luwangCount ELSE 0 END) as completedLuwang",
+        "COUNT(a.id) as totalAssignments",
+        "SUM(CASE WHEN a.status = 'completed' THEN 1 ELSE 0 END) as completedAssignments",
+      ])
+      .where("a.pitak = :pitakId", { pitakId });
+    
+    if (currentSession && sessionId) {
+      assignmentsQuery.andWhere("a.session.id = :sessionId", { sessionId });
+    }
+
+    const historicalData = await assignmentsQuery
+      .groupBy("STRFTIME('%Y-%m', a.assignmentDate)")
+      .orderBy("period", "DESC")
+      .limit(periods)
+      .getRawMany();
+
+    // Calculate trends
+    // @ts-ignore
+    const efficiencyTrends = historicalData.map((data) => {
+      const completedLuwang = parseFloat(data.completedLuwang) || 0;
+      const totalAssignments = parseInt(data.totalAssignments) || 0;
+      const completedAssignments = parseInt(data.completedAssignments) || 0;
+      
+      return {
+        period: data.period,
+        landEfficiency: completedLuwang, // Simplified for this example
+        laborEfficiency: totalAssignments > 0 ? (completedAssignments / totalAssignments) * 100 : 0,
+      };
+    }).reverse();
+
+    // Calculate improvement rate
+    let improvementRate = 0;
+    if (efficiencyTrends.length >= 2) {
+      const first = efficiencyTrends[0];
+      const last = efficiencyTrends[efficiencyTrends.length - 1];
+      improvementRate = ((last.laborEfficiency - first.laborEfficiency) / first.laborEfficiency) * 100;
+    }
+
     return {
-      periods: 3,
-      trend: "stable",
-      improvementRate: 0,
-      consistency: "medium",
+      periods: efficiencyTrends.length,
+      trend: improvementRate > 0 ? "improving" : improvementRate < 0 ? "declining" : "stable",
+      improvementRate: improvementRate,
+      consistency: efficiencyTrends.length >= 3 ? "medium" : "low",
+      data: efficiencyTrends,
     };
   }
 
   /**
    * Helper: Calculate productivity benchmarks
-   * @param {Object} repositories
-   * @param {{ pitakId: any; }} params
+   * @param {Object} repositories - Repository objects
+   * @param {{ pitakId: any; currentSession: boolean; }} params - Query parameters
    */
   async calculateProductivityBenchmarks(repositories, params) {
-    const { pitakId } = params;
+    const { pitakId, currentSession = false } = params;
     // @ts-ignore
     const { pitak } = repositories;
+    
+    // Get current session ID if requested
+    let sessionId = null;
+    if (currentSession) {
+      sessionId = await farmSessionDefaultSessionId();
+    }
 
     // Get all pitaks for comparison
-    const allPitaks = await pitak.find({
+    let allPitaksQuery = pitak.find({
       where: { status: "active" },
-      relations: ["assignments"],
+      relations: ["assignments", "bukid", "bukid.session"],
     });
+    
+    if (currentSession && sessionId) {
+      // @ts-ignore
+      allPitaksQuery = pitak
+        .createQueryBuilder("p")
+        .leftJoin("p.assignments", "a")
+        .leftJoin("p.bukid", "b")
+        .leftJoin("b.session", "s")
+        .where("p.status = :status", { status: "active" })
+        .andWhere("s.id = :sessionId", { sessionId })
+        .getMany();
+    }
+
+    const allPitaks = await allPitaksQuery;
 
     const pitakEfficiencies = allPitaks.map(
-      (
-        /** @type {{ assignments: any[]; id: any; totalLuwang: string; }} */ p,
-      ) => {
+      // @ts-ignore
+      (p) => {
         const completedLuwang = p.assignments
           .filter(
-            (/** @type {{ status: string; }} */ a) => a.status === "completed",
+            // @ts-ignore
+            (a) => a.status === "completed",
           )
           .reduce(
             (
-              /** @type {number} */ sum,
-              /** @type {{ luwangCount: string; }} */ a,
+              // @ts-ignore
+              sum,
+              // @ts-ignore
+              a,
             ) => sum + parseFloat(a.luwangCount),
             0,
           );
@@ -1241,16 +1412,20 @@ class PitakProductivityHandler {
     );
 
     const efficiencies = pitakEfficiencies
-      .map((/** @type {{ efficiency: any; }} */ p) => p.efficiency)
-      .filter((/** @type {number} */ e) => !isNaN(e));
+      // @ts-ignore
+      .map((p) => p.efficiency)
+      // @ts-ignore
+      .filter((e) => !isNaN(e));
     const currentPitak = pitakEfficiencies.find(
-      (/** @type {{ pitakId: any; }} */ p) => p.pitakId === pitakId,
+      // @ts-ignore
+      (p) => p.pitakId === pitakId,
     );
 
     return {
       average:
         efficiencies.reduce(
-          (/** @type {any} */ sum, /** @type {any} */ e) => sum + e,
+          // @ts-ignore
+          (sum, e) => sum + e,
           0,
         ) / efficiencies.length || 0,
       top25: this.percentile(efficiencies, 75),
@@ -1265,8 +1440,8 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Calculate percentile
-   * @param {string | any[]} arr
-   * @param {number} p
+   * @param {string | any[]} arr - Array of values
+   * @param {number} p - Percentile to calculate
    */
   percentile(arr, p) {
     if (arr.length === 0) return 0;
@@ -1281,8 +1456,8 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Calculate percentile rank
-   * @param {string | any[]} arr
-   * @param {number} value
+   * @param {string | any[]} arr - Array of values
+   * @param {number} value - Value to find percentile for
    */
   calculatePercentile(arr, value) {
     if (arr.length === 0) return 0;
@@ -1293,11 +1468,10 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Generate efficiency insights
-   * @param {{ landEfficiency: any; laborEfficiency: any; costEfficiency: any; timeEfficiency?: number; resourceUtilization?: number; }} metrics
-   * @param {{ periods: number; trend: string; improvementRate: number; consistency: string; }} trends
-   * @param {{ average: any; top25?: any; median?: any; current?: any; percentile?: number; }} benchmarks
+   * @param {{ landEfficiency: any; laborEfficiency: any; costEfficiency: any; timeEfficiency?: number; resourceUtilization?: number; }} metrics - Efficiency metrics
+   * @param {{ periods: number; trend: string; improvementRate: number; consistency: string; }} trends - Historical trends
+   * @param {{ average: any; top25?: any; median?: any; current?: any; percentile?: number; }} benchmarks - Productivity benchmarks
    */
-  // @ts-ignore
   // @ts-ignore
   generateEfficiencyInsights(metrics, trends, benchmarks) {
     const insights = [];
@@ -1331,10 +1505,9 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Generate efficiency recommendations
-   * @param {{ landEfficiency: any; laborEfficiency: any; costEfficiency?: number; timeEfficiency: any; resourceUtilization?: number; }} metrics
-   * @param {{ type: string; message: string; suggestion: string; }[]} insights
+   * @param {{ landEfficiency: any; laborEfficiency: any; costEfficiency?: number; timeEfficiency: any; resourceUtilization?: number; }} metrics - Efficiency metrics
+   * @param {{ type: string; message: string; suggestion: string; }[]} insights - Efficiency insights
    */
-  // @ts-ignore
   // @ts-ignore
   generateEfficiencyRecommendations(metrics, insights) {
     const recommendations = [];
@@ -1371,7 +1544,7 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Calculate overall efficiency score
-   * @param {{ landEfficiency: any; laborEfficiency: any; costEfficiency: any; timeEfficiency: any; resourceUtilization: any; }} metrics
+   * @param {{ landEfficiency: any; laborEfficiency: any; costEfficiency: any; timeEfficiency: any; resourceUtilization: any; }} metrics - Efficiency metrics
    */
   calculateOverallEfficiencyScore(metrics) {
     const weights = {
@@ -1400,19 +1573,14 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Rank pitak comparison
-   * @param {any[]} comparisonResults
-   * @param {any} metrics
+   * @param {any[]} comparisonResults - Comparison results
+   * @param {any} metrics - Metrics to use for ranking
    */
-  // @ts-ignore
   // @ts-ignore
   rankPitakComparison(comparisonResults, metrics) {
     // Calculate scores for ranking
     const ranked = comparisonResults.map(
-      (
-        /** @type {{ productivity: any; efficiency: any; financial: any; }} */ pitak,
-      ) => {
-        // @ts-ignore
-        // @ts-ignore
+      (pitak) => {
         const rankings = {};
         const scores = {};
 
@@ -1430,26 +1598,18 @@ class PitakProductivityHandler {
         return {
           ...pitak,
           scores,
-          rankings: {}, // Will be filled after sorting
+          rankings, // Will be filled after sorting
         };
       },
     );
 
     // Sort and assign ranks
     ranked.sort(
-      (
-        /** @type {{ scores: { overall: number; }; }} */ a,
-        /** @type {{ scores: { overall: number; }; }} */ b,
-      ) => b.scores.overall - a.scores.overall,
+      (a, b) => b.scores.overall - a.scores.overall,
     );
 
-    // @ts-ignore
     ranked.forEach(
-      // @ts-ignore
-      (
-        /** @type {{ rankings: { overallRank: any; percentile: number; }; }} */ pitak,
-        /** @type {number} */ index,
-      ) => {
+      (pitak, index) => {
         pitak.rankings = {
           overallRank: index + 1,
           percentile: ((ranked.length - index) / ranked.length) * 100,
@@ -1462,7 +1622,7 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Calculate category score
-   * @param {{ completionRate: number | undefined; landUtilization: number | undefined; efficiency: number | undefined; }} data
+   * @param {{ completionRate: number | undefined; landUtilization: number | undefined; efficiency: number | undefined; }} data - Category data
    */
   calculateCategoryScore(data) {
     // Simple scoring based on key metrics
@@ -1489,7 +1649,7 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Generate comparison insights
-   * @param {any[]} rankedComparison
+   * @param {any[]} rankedComparison - Ranked comparison data
    */
   generateComparisonInsights(rankedComparison) {
     if (rankedComparison.length < 2) return [];
@@ -1497,13 +1657,9 @@ class PitakProductivityHandler {
     const insights = [];
     const topPerformer = rankedComparison[0];
     // @ts-ignore
-    // @ts-ignore
     const averageScore =
       rankedComparison.reduce(
-        (
-          /** @type {any} */ sum,
-          /** @type {{ scores: { overall: any; }; }} */ p,
-        ) => sum + p.scores.overall,
+        (sum, p) => sum + p.scores.overall,
         0,
       ) / rankedComparison.length;
 
@@ -1516,27 +1672,23 @@ class PitakProductivityHandler {
     // Find opportunities for improvement
     rankedComparison
       .slice(1)
-      .forEach(
-        (
-          /** @type {{ scores: { overall: number; }; info: { location: any; }; }} */ pitak,
-        ) => {
-          const gap = topPerformer.scores.overall - pitak.scores.overall;
-          if (gap > 20) {
-            insights.push({
-              type: "opportunity",
-              message: `${pitak.info.location} has ${gap.toFixed(1)} points improvement opportunity`,
-              suggestion: "Review and adopt practices from top performers",
-            });
-          }
-        },
-      );
+      .forEach((pitak) => {
+        const gap = topPerformer.scores.overall - pitak.scores.overall;
+        if (gap > 20) {
+          insights.push({
+            type: "opportunity",
+            message: `${pitak.info.location} has ${gap.toFixed(1)} points improvement opportunity`,
+            suggestion: "Review and adopt practices from top performers",
+          });
+        }
+      });
 
     return insights;
   }
 
   /**
    * Helper: Compare metrics across pitaks
-   * @param {any[]} rankedComparison
+   * @param {any[]} rankedComparison - Ranked comparison data
    */
   compareMetricsAcrossPitaks(rankedComparison) {
     const metrics = [
@@ -1549,9 +1701,7 @@ class PitakProductivityHandler {
 
     metrics.forEach((metric) => {
       const values = rankedComparison.map(
-        (
-          /** @type {{ productivity: { [x: string]: any; }; efficiency: { [x: string]: any; }; financial: { [x: string]: any; }; }} */ p,
-        ) =>
+        (p) =>
           p.productivity[metric] ||
           p.efficiency[metric] ||
           p.financial[metric] ||
@@ -1562,7 +1712,7 @@ class PitakProductivityHandler {
       comparison[metric] = {
         average:
           values.reduce(
-            (/** @type {any} */ sum, /** @type {any} */ v) => sum + v,
+            (sum, v) => sum + v,
             0,
           ) / values.length,
         range: {
@@ -1578,18 +1728,17 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Calculate standard deviation
-   * @param {any[]} values
+   * @param {any[]} values - Array of values
    */
   calculateStandardDeviation(values) {
     const mean =
       values.reduce(
-        (/** @type {any} */ sum, /** @type {any} */ v) => sum + v,
+        (sum, v) => sum + v,
         0,
       ) / values.length;
     const variance =
       values.reduce(
-        (/** @type {number} */ sum, /** @type {number} */ v) =>
-          sum + Math.pow(v - mean, 2),
+        (sum, v) => sum + Math.pow(v - mean, 2),
         0,
       ) / values.length;
     return Math.sqrt(variance);
@@ -1597,21 +1746,20 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Calculate consistency score
-   * @param {any[]} comparisonResults
+   * @param {any[]} comparisonResults - Comparison results
    */
   calculateConsistencyScore(comparisonResults) {
     const scores = comparisonResults.map(
-      (/** @type {{ score: any; }} */ p) => p.score,
+      (p) => p.score,
     );
     const mean =
       scores.reduce(
-        (/** @type {any} */ sum, /** @type {any} */ s) => sum + s,
+        (sum, s) => sum + s,
         0,
       ) / scores.length;
     const variance =
       scores.reduce(
-        (/** @type {number} */ sum, /** @type {number} */ s) =>
-          sum + Math.pow(s - mean, 2),
+        (sum, s) => sum + Math.pow(s - mean, 2),
         0,
       ) / scores.length;
     const stdDev = Math.sqrt(variance);
@@ -1625,7 +1773,7 @@ class PitakProductivityHandler {
 
   /**
    * Helper: Identify top performers
-   * @param {string | any[]} productivityData
+   * @param {string | any[]} productivityData - Productivity data
    */
   identifyTopPerformers(productivityData) {
     if (productivityData.length === 0) return [];

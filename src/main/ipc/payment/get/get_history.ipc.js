@@ -15,11 +15,12 @@ module.exports = async function getPaymentHistory(params = {}) {
 
     const historyRepository = AppDataSource.getRepository(PaymentHistory);
 
-    // Base query with worker relation
+    // Base query with worker and session relations
     const queryBuilder = historyRepository
       .createQueryBuilder("history")
       .leftJoinAndSelect("history.payment", "payment")
-      .leftJoinAndSelect("payment.worker", "worker"); // Added worker join
+      .leftJoinAndSelect("payment.worker", "worker")
+      .leftJoinAndSelect("payment.session", "session"); // Added session
 
     // Apply filters
     if (paymentId) {
@@ -75,6 +76,16 @@ module.exports = async function getPaymentHistory(params = {}) {
         name: record.payment.worker.name,
         // @ts-ignore
         contact: record.payment.worker.contact,
+      } : null,
+      // Include session data
+      // @ts-ignore
+      session: record.payment?.session ? {
+        // @ts-ignore
+        id: record.payment.session.id,
+        // @ts-ignore
+        name: record.payment.session.name,
+        // @ts-ignore
+        year: record.payment.session.year,
       } : null,
       // @ts-ignore
       paymentInfo: record.payment ? {

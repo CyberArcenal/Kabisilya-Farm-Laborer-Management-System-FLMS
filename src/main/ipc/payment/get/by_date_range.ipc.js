@@ -3,6 +3,7 @@
 
 const Payment = require("../../../../entities/Payment");
 const { AppDataSource } = require("../../../db/dataSource");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
 module.exports = async function getPaymentsByDateRange(params = {}) {
   try {
@@ -17,6 +18,10 @@ module.exports = async function getPaymentsByDateRange(params = {}) {
       workerId,
       // @ts-ignore
       pitakId,
+      // @ts-ignore
+      sessionId,
+      // @ts-ignore
+      currentSession = false, // New parameter
       // @ts-ignore
       limit = 50,
       // @ts-ignore
@@ -59,11 +64,12 @@ module.exports = async function getPaymentsByDateRange(params = {}) {
 
     const paymentRepository = AppDataSource.getRepository(Payment);
 
-    // Base query: join worker and pitak
+    // Base query: join worker, pitak, and session
     const queryBuilder = paymentRepository
       .createQueryBuilder("payment")
       .leftJoinAndSelect("payment.worker", "worker")
       .leftJoinAndSelect("payment.pitak", "pitak")
+      .leftJoinAndSelect("payment.session", "session") // Added session
       .where("payment.createdAt BETWEEN :start AND :end", { start, end });
 
     // Apply additional filters
@@ -77,6 +83,16 @@ module.exports = async function getPaymentsByDateRange(params = {}) {
 
     if (pitakId) {
       queryBuilder.andWhere("pitak.id = :pitakId", { pitakId });
+    }
+
+    if (sessionId) {
+      queryBuilder.andWhere("session.id = :sessionId", { sessionId });
+    }
+
+    // Handle current session filter
+    if (currentSession) {
+      const currentSessionId = await farmSessionDefaultSessionId();
+      queryBuilder.andWhere("session.id = :currentSessionId", { currentSessionId });
     }
 
     // Calculate pagination
@@ -97,7 +113,6 @@ module.exports = async function getPaymentsByDateRange(params = {}) {
     let dateFormat;
     switch (groupBy) {
       case "week":
-        // Year-week (ISO week number may vary; using %Y-%W)
         groupByExpr = "strftime('%Y-%W', payment.createdAt)";
         dateFormat = "%Y Week %W";
         break;
@@ -121,6 +136,7 @@ module.exports = async function getPaymentsByDateRange(params = {}) {
       .createQueryBuilder("payment")
       .leftJoin("payment.worker", "worker")
       .leftJoin("payment.pitak", "pitak")
+      .leftJoin("payment.session", "session") // Added session
       .select([
         `${groupByExpr} as period`,
         "COUNT(payment.id) as count",
@@ -133,6 +149,11 @@ module.exports = async function getPaymentsByDateRange(params = {}) {
     if (status) aggregatedQB.andWhere("payment.status = :status", { status });
     if (workerId) aggregatedQB.andWhere("worker.id = :workerId", { workerId });
     if (pitakId) aggregatedQB.andWhere("pitak.id = :pitakId", { pitakId });
+    if (sessionId) aggregatedQB.andWhere("session.id = :sessionId", { sessionId });
+    if (currentSession) {
+      const currentSessionId = await farmSessionDefaultSessionId();
+      aggregatedQB.andWhere("session.id = :currentSessionId", { currentSessionId });
+    }
 
     aggregatedQB.groupBy(groupByExpr).orderBy("period", "DESC");
     const aggregatedData = await aggregatedQB.getRawMany();
@@ -142,6 +163,7 @@ module.exports = async function getPaymentsByDateRange(params = {}) {
       .createQueryBuilder("payment")
       .leftJoin("payment.worker", "worker")
       .leftJoin("payment.pitak", "pitak")
+      .leftJoin("payment.session", "session") // Added session
       .select([
         "COUNT(payment.id) as total_payments",
         "COALESCE(SUM(payment.grossPay), 0) as total_gross",
@@ -156,6 +178,11 @@ module.exports = async function getPaymentsByDateRange(params = {}) {
     if (status) summaryQB.andWhere("payment.status = :status", { status });
     if (workerId) summaryQB.andWhere("worker.id = :workerId", { workerId });
     if (pitakId) summaryQB.andWhere("pitak.id = :pitakId", { pitakId });
+    if (sessionId) summaryQB.andWhere("session.id = :sessionId", { sessionId });
+    if (currentSession) {
+      const currentSessionId = await farmSessionDefaultSessionId();
+      summaryQB.andWhere("session.id = :currentSessionId", { currentSessionId });
+    }
 
     const summary = await summaryQB.getRawOne();
 
@@ -164,6 +191,7 @@ module.exports = async function getPaymentsByDateRange(params = {}) {
       .createQueryBuilder("payment")
       .leftJoin("payment.worker", "worker")
       .leftJoin("payment.pitak", "pitak")
+      .leftJoin("payment.session", "session") // Added session
       .select([
         "worker.id as worker_id",
         "worker.name as worker_name",
@@ -175,6 +203,11 @@ module.exports = async function getPaymentsByDateRange(params = {}) {
     if (status) topPerformersQB.andWhere("payment.status = :status", { status });
     if (workerId) topPerformersQB.andWhere("worker.id = :workerId", { workerId });
     if (pitakId) topPerformersQB.andWhere("pitak.id = :pitakId", { pitakId });
+    if (sessionId) topPerformersQB.andWhere("session.id = :sessionId", { sessionId });
+    if (currentSession) {
+      const currentSessionId = await farmSessionDefaultSessionId();
+      topPerformersQB.andWhere("session.id = :currentSessionId", { currentSessionId });
+    }
 
     topPerformersQB.groupBy("worker.id, worker.name").orderBy("total_earned", "DESC").limit(10);
     const topPerformers = await topPerformersQB.getRawMany();

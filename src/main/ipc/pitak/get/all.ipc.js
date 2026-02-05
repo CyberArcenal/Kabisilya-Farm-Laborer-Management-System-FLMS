@@ -3,15 +3,19 @@
 
 const Pitak = require("../../../../entities/Pitak");
 const { AppDataSource } = require("../../../db/dataSource");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
 // @ts-ignore
 module.exports = async (filters = {}, userId) => {
   try {
     const pitakRepo = AppDataSource.getRepository(Pitak);
+    const currentSessionId = await farmSessionDefaultSessionId();
 
     const query = pitakRepo
       .createQueryBuilder("pitak")
-      .leftJoinAndSelect("pitak.bukid", "bukid");
+      .leftJoinAndSelect("pitak.bukid", "bukid")
+      .leftJoinAndSelect("bukid.session", "session")
+      .where("session.id = :sessionId", { sessionId: currentSessionId });
 
     // Apply filters
     // @ts-ignore
@@ -60,6 +64,8 @@ module.exports = async (filters = {}, userId) => {
     // Get summary stats
     const statsQuery = pitakRepo
       .createQueryBuilder("pitak")
+      .leftJoin("pitak.bukid", "bukid")
+      .leftJoin("bukid.session", "session")
       .select([
         "COUNT(*) as total",
         "SUM(pitak.totalLuwang) as totalLuwang",
@@ -67,12 +73,13 @@ module.exports = async (filters = {}, userId) => {
         "SUM(CASE WHEN pitak.status = 'active' THEN 1 ELSE 0 END) as activeCount",
         "SUM(CASE WHEN pitak.status = 'inactive' THEN 1 ELSE 0 END) as inactiveCount",
         "SUM(CASE WHEN pitak.status = 'completed' THEN 1 ELSE 0 END) as harvestedCount",
-      ]);
+      ])
+      .where("session.id = :sessionId", { sessionId: currentSessionId });
 
     // @ts-ignore
     if (filters.bukidId) {
       // @ts-ignore
-      statsQuery.where("pitak.bukidId = :bukidId", { bukidId: filters.bukidId });
+      statsQuery.andWhere("pitak.bukidId = :bukidId", { bukidId: filters.bukidId });
     }
 
     const stats = await statsQuery.getRawOne();

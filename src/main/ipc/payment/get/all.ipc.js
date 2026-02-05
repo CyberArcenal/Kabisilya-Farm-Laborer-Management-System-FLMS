@@ -3,6 +3,7 @@
 
 const Payment = require("../../../../entities/Payment");
 const { AppDataSource } = require("../../../db/dataSource");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
 module.exports = async function getAllPayments(params = {}) {
   try {
@@ -22,6 +23,10 @@ module.exports = async function getAllPayments(params = {}) {
       // @ts-ignore
       pitakId,
       // @ts-ignore
+      sessionId,
+      // @ts-ignore
+      currentSession = false, // New parameter
+      // @ts-ignore
       sortBy = "createdAt",
       // @ts-ignore
       sortOrder = "DESC",
@@ -29,11 +34,12 @@ module.exports = async function getAllPayments(params = {}) {
 
     const paymentRepository = AppDataSource.getRepository(Payment);
 
-    // Base query: join worker and pitak
+    // Base query: join worker, pitak, and session
     const queryBuilder = paymentRepository
       .createQueryBuilder("payment")
       .leftJoinAndSelect("payment.worker", "worker")
-      .leftJoinAndSelect("payment.pitak", "pitak");
+      .leftJoinAndSelect("payment.pitak", "pitak")
+      .leftJoinAndSelect("payment.session", "session"); // Added session
 
     // Apply filters to main list
     if (status) {
@@ -58,6 +64,16 @@ module.exports = async function getAllPayments(params = {}) {
 
     if (pitakId) {
       queryBuilder.andWhere("pitak.id = :pitakId", { pitakId });
+    }
+
+    if (sessionId) {
+      queryBuilder.andWhere("session.id = :sessionId", { sessionId });
+    }
+
+    // Handle current session filter
+    if (currentSession) {
+      const currentSessionId = await farmSessionDefaultSessionId();
+      queryBuilder.andWhere("session.id = :currentSessionId", { currentSessionId });
     }
 
     // Pagination parsing
@@ -91,6 +107,7 @@ module.exports = async function getAllPayments(params = {}) {
       .createQueryBuilder("payment")
       .leftJoin("payment.worker", "worker")
       .leftJoin("payment.pitak", "pitak")
+      .leftJoin("payment.session", "session") // Added session
       .select([
         "COALESCE(SUM(payment.grossPay), 0) as total_gross",
         "COALESCE(SUM(payment.netPay), 0) as total_net",
@@ -105,6 +122,11 @@ module.exports = async function getAllPayments(params = {}) {
     if (endDate) summaryQB.andWhere("payment.createdAt <= :endDate", { endDate: new Date(endDate) });
     if (workerId) summaryQB.andWhere("worker.id = :workerId", { workerId });
     if (pitakId) summaryQB.andWhere("pitak.id = :pitakId", { pitakId });
+    if (sessionId) summaryQB.andWhere("session.id = :sessionId", { sessionId });
+    if (currentSession) {
+      const currentSessionId = await farmSessionDefaultSessionId();
+      summaryQB.andWhere("session.id = :currentSessionId", { currentSessionId });
+    }
 
     const summary = await summaryQB.getRawOne();
 
@@ -113,6 +135,7 @@ module.exports = async function getAllPayments(params = {}) {
       .createQueryBuilder("payment")
       .leftJoin("payment.worker", "worker")
       .leftJoin("payment.pitak", "pitak")
+      .leftJoin("payment.session", "session") // Added session
       .select([
         "payment.status as status",
         "COUNT(payment.id) as count",
@@ -124,6 +147,11 @@ module.exports = async function getAllPayments(params = {}) {
     if (endDate) statusDistQB.andWhere("payment.createdAt <= :endDate", { endDate: new Date(endDate) });
     if (workerId) statusDistQB.andWhere("worker.id = :workerId", { workerId });
     if (pitakId) statusDistQB.andWhere("pitak.id = :pitakId", { pitakId });
+    if (sessionId) statusDistQB.andWhere("session.id = :sessionId", { sessionId });
+    if (currentSession) {
+      const currentSessionId = await farmSessionDefaultSessionId();
+      statusDistQB.andWhere("session.id = :currentSessionId", { currentSessionId });
+    }
 
     statusDistQB.groupBy("payment.status");
     const statusDistributionRaw = await statusDistQB.getRawMany();

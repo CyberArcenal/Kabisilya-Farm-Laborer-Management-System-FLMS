@@ -16,7 +16,7 @@ module.exports = async (debtId, userId) => {
         "debt", 
         "debt.worker", // Get worker through debt relation
         "payment",
-        "payment.worker" // Also get worker through payment if exists
+        "payment.worker", // Also get worker through payment if exists
       ],
       order: { transactionDate: "DESC" }
     });

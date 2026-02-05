@@ -1,29 +1,36 @@
 // components/PitakSelect.tsx
-import React, { useState, useEffect, useRef } from 'react';
-import { Search, ChevronDown, Loader, Layers } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Search, ChevronDown, Loader, Layers, Filter } from 'lucide-react';
 import type { PitakData } from '../../../apis/pitak';
 import pitakAPI from '../../../apis/pitak';
+import bukidAPI from '../../../apis/bukid'; // Import bukidAPI
 
 interface PitakSelectProps {
   value: number | null;
   onChange: (pitakId: number | null) => void;
   disabled?: boolean;
   placeholder?: string;
+  includeBukidFilter?: boolean; // New prop to optionally show bukid filter
 }
 
 const PitakSelect: React.FC<PitakSelectProps> = ({
   value,
   onChange,
   disabled = false,
-  placeholder = 'Select a plot'
+  placeholder = 'Select a plot',
+  includeBukidFilter = true // Default to true
 }) => {
   const [pitaks, setPitaks] = useState<PitakData[]>([]);
   const [filteredPitaks, setFilteredPitaks] = useState<PitakData[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [bukidFilter, setBukidFilter] = useState<number | null>(null); // New state for bukid filter
+  const [bukids, setBukids] = useState<any[]>([]); // Store bukid list
+  const [loadingBukids, setLoadingBukids] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // Fetch pitaks
   useEffect(() => {
     const fetchPitaks = async () => {
       try {
@@ -45,18 +52,52 @@ const PitakSelect: React.FC<PitakSelectProps> = ({
     fetchPitaks();
   }, []);
 
+  // Fetch bukids for filter dropdown
   useEffect(() => {
-    if (searchTerm.trim() === '') {
-      setFilteredPitaks(pitaks);
-    } else {
-      const filtered = pitaks.filter(pitak =>
-        pitak.location?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        pitak.status?.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-      setFilteredPitaks(filtered);
-    }
-  }, [searchTerm, pitaks]);
+    const fetchBukids = async () => {
+      if (!includeBukidFilter) return;
+      
+      try {
+        setLoadingBukids(true);
+        const response = await bukidAPI.getAll({ limit: 100 });
+        
+        if (response.status && response.data && response.data.bukids) {
+          setBukids(response.data.bukids);
+        }
+      } catch (err) {
+        console.error('Error fetching farms:', err);
+      } finally {
+        setLoadingBukids(false);
+      }
+    };
 
+    fetchBukids();
+  }, [includeBukidFilter]);
+
+  // Filter pitaks based on bukid filter and search term
+  useEffect(() => {
+    let filtered = pitaks;
+    
+    // First filter by bukid if selected
+    if (bukidFilter) {
+      filtered = filtered.filter(pitak => 
+        pitak.bukid && pitak.bukid.id === bukidFilter
+      );
+    }
+    
+    // Then filter by search term
+    if (searchTerm.trim() !== '') {
+      filtered = filtered.filter(pitak =>
+        pitak.location?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        pitak.status?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (pitak.bukid?.name?.toLowerCase().includes(searchTerm.toLowerCase()))
+      );
+    }
+    
+    setFilteredPitaks(filtered);
+  }, [searchTerm, pitaks, bukidFilter]);
+
+  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -68,18 +109,35 @@ const PitakSelect: React.FC<PitakSelectProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Get bukid name for display
+  const getBukidName = (bukidId: number) => {
+    const bukid = bukids.find(b => b.id === bukidId);
+    return bukid ? bukid.name : `Farm #${bukidId}`;
+  };
+
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value);
+  };
+
+  const handleBukidFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value;
+    setBukidFilter(value ? parseInt(value) : null);
   };
 
   const handleSelect = (pitakId: number) => {
     onChange(pitakId);
     setIsOpen(false);
     setSearchTerm('');
+    setBukidFilter(null); // Reset filter after selection
   };
 
   const handleClear = () => {
     onChange(null);
+  };
+
+  const handleClearFilters = () => {
+    setBukidFilter(null);
+    setSearchTerm('');
   };
 
   const selectedPitak = pitaks.find(p => p.id === value);
@@ -103,7 +161,12 @@ const PitakSelect: React.FC<PitakSelectProps> = ({
           {selectedPitak ? (
             <>
               <Layers className="w-4 h-4" style={{ color: 'var(--accent-green)' }} />
-              <span className="truncate">{selectedPitak.location || `Plot #${selectedPitak.id}`}</span>
+              <div className="truncate">
+                <div className="font-medium">{selectedPitak.location || `Plot #${selectedPitak.id}`}</div>
+                <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  {selectedPitak.bukid?.name ? `Farm: ${selectedPitak.bukid.name}` : ''}
+                </div>
+              </div>
             </>
           ) : (
             <span style={{ color: 'var(--text-secondary)' }}>{placeholder}</span>
@@ -136,29 +199,87 @@ const PitakSelect: React.FC<PitakSelectProps> = ({
           style={{
             backgroundColor: 'var(--card-bg)',
             border: '1px solid var(--border-color)',
-            maxHeight: '300px',
+            maxHeight: '400px',
             overflow: 'hidden'
           }}
         >
-          <div className="p-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4"
-                style={{ color: 'var(--text-secondary)' }} />
-              <input
-                type="text"
-                placeholder="Search plots..."
-                value={searchTerm}
-                onChange={handleSearchChange}
-                className="w-full pl-9 pr-3 py-2 rounded-lg text-sm"
-                style={{
-                  backgroundColor: 'var(--input-bg)',
-                  border: '1px solid var(--input-border)',
-                  color: 'var(--text-primary)'
-                }}
-                autoFocus
-              />
+          {/* Bukid Filter */}
+          {includeBukidFilter && (
+            <div className="p-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="mb-2">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <Filter className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+                    <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                      Filter by Farm
+                    </span>
+                  </div>
+                  {(bukidFilter || searchTerm) && (
+                    <button
+                      type="button"
+                      onClick={handleClearFilters}
+                      className="text-xs px-2 py-1 rounded hover:bg-gray-100"
+                      style={{ color: 'var(--accent-rust)' }}
+                    >
+                      Clear filters
+                    </button>
+                  )}
+                </div>
+                <select
+                  value={bukidFilter || ''}
+                  onChange={handleBukidFilterChange}
+                  className="w-full p-2 rounded-lg text-sm"
+                  style={{
+                    backgroundColor: 'var(--input-bg)',
+                    border: '1px solid var(--input-border)',
+                    color: 'var(--text-primary)'
+                  }}
+                  disabled={loadingBukids}
+                >
+                  <option value="">All Farms</option>
+                  {loadingBukids ? (
+                    <option disabled>Loading farms...</option>
+                  ) : (
+                    bukids.map((bukid) => (
+                      <option key={bukid.id} value={bukid.id}>
+                        {bukid.name} {bukid.location ? `(${bukid.location})` : ''}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+
+              {/* Search Bar */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4"
+                  style={{ color: 'var(--text-secondary)' }} />
+                <input
+                  type="text"
+                  placeholder="Search plots by location, status, or farm name..."
+                  value={searchTerm}
+                  onChange={handleSearchChange}
+                  className="w-full pl-9 pr-3 py-2 rounded-lg text-sm"
+                  style={{
+                    backgroundColor: 'var(--input-bg)',
+                    border: '1px solid var(--input-border)',
+                    color: 'var(--text-primary)'
+                  }}
+                  autoFocus
+                />
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Show filters summary */}
+          {(bukidFilter || searchTerm) && filteredPitaks.length > 0 && (
+            <div className="px-3 py-2 text-xs border-b" style={{ borderColor: 'var(--border-light)', backgroundColor: 'var(--bg-secondary)' }}>
+              <div style={{ color: 'var(--text-secondary)' }}>
+                Showing {filteredPitaks.length} plot{filteredPitaks.length !== 1 ? 's' : ''}
+                {bukidFilter && ` in ${getBukidName(bukidFilter)}`}
+                {searchTerm && ` matching "${searchTerm}"`}
+              </div>
+            </div>
+          )}
 
           {loading && (
             <div className="p-4 text-center">
@@ -172,8 +293,20 @@ const PitakSelect: React.FC<PitakSelectProps> = ({
           {!loading && (
             <div className="max-h-60 overflow-y-auto">
               {filteredPitaks.length === 0 ? (
-                <div className="p-4 text-center text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  {searchTerm ? 'No plots found' : 'No plots available'}
+                <div className="p-4 text-center">
+                  <div className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
+                    {searchTerm || bukidFilter ? 'No plots found matching your criteria' : 'No plots available'}
+                  </div>
+                  {(searchTerm || bukidFilter) && (
+                    <button
+                      type="button"
+                      onClick={handleClearFilters}
+                      className="text-sm px-3 py-1 rounded hover:bg-gray-100"
+                      style={{ color: 'var(--accent-green)' }}
+                    >
+                      Clear filters
+                    </button>
+                  )}
                 </div>
               ) : (
                 filteredPitaks.map((pitak) => (
@@ -194,11 +327,15 @@ const PitakSelect: React.FC<PitakSelectProps> = ({
                         <div className="w-2 h-2 rounded-full bg-white"></div>
                       )}
                     </div>
-                    <Layers className="w-4 h-4" style={{ color: 'var(--accent-green)' }} />
-                    <div className="flex-1 text-left">
-                      <div className="font-medium text-sm">{pitak.location || `Plot #${pitak.id}`}</div>
-                      <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                        Farm #{pitak.bukidId} • {pitak.status || 'No status'}
+                    <Layers className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--accent-green)' }} />
+                    <div className="flex-1 text-left min-w-0">
+                      <div className="font-medium text-sm truncate">{pitak.location || `Plot #${pitak.id}`}</div>
+                      <div className="text-xs flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
+                        <span className="truncate">{pitak.bukid?.name || `Farm #${pitak.bukid.id}`}</span>
+                        <span>•</span>
+                        <span>{pitak.status || 'No status'}</span>
+                        <span>•</span>
+                        <span>{pitak.totalLuwang || 0} luwang</span>
                       </div>
                     </div>
                   </button>

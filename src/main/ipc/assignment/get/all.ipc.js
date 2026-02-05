@@ -6,9 +6,10 @@ const Worker = require("../../../../entities/Worker");
 // @ts-ignore
 const Pitak = require("../../../../entities/Pitak");
 const { AppDataSource } = require("../../../db/dataSource");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
 /**
- * Get all assignments with optional filters
+ * Get all assignments with optional filters, scoped to current session
  * @param {Object} filters - Filter criteria
  * @param {number} userId - User ID for logging
  * @returns {Promise<Object>} Response object
@@ -17,12 +18,15 @@ const { AppDataSource } = require("../../../db/dataSource");
 module.exports = async (filters = {}, userId) => {
   try {
     const assignmentRepo = AppDataSource.getRepository(Assignment);
+    const currentSessionId = await farmSessionDefaultSessionId();
 
     // Build query with joins
     const queryBuilder = assignmentRepo
       .createQueryBuilder("assignment")
       .leftJoinAndSelect("assignment.worker", "worker")
       .leftJoinAndSelect("assignment.pitak", "pitak")
+      .leftJoinAndSelect("assignment.session", "session")
+      .where("session.id = :sessionId", { sessionId: currentSessionId })
       .orderBy("assignment.assignmentDate", "DESC");
 
     // Apply filters
@@ -49,50 +53,47 @@ module.exports = async (filters = {}, userId) => {
 
     // @ts-ignore
     if (filters.workerId) {
-      queryBuilder.andWhere("assignment.workerId = :workerId", {
-        // @ts-ignore
-        workerId: filters.workerId,
-      });
+      // @ts-ignore
+      queryBuilder.andWhere("worker.id = :workerId", { workerId: filters.workerId });
     }
 
     // @ts-ignore
     if (filters.pitakId) {
-      queryBuilder.andWhere("assignment.pitakId = :pitakId", {
-        // @ts-ignore
-        pitakId: filters.pitakId,
-      });
+      // @ts-ignore
+      queryBuilder.andWhere("pitak.id = :pitakId", { pitakId: filters.pitakId });
     }
 
     const assignments = await queryBuilder.getMany();
 
     // Format response
-    const formattedAssignments = assignments.map(
-      (
-        /** @type {{ id: any; luwangCount: string; assignmentDate: any; status: any; notes: any; createdAt: any; updatedAt: any; worker: { id: any; name: any; code: any; }; pitak: { id: any; name: any; code: any; }; }} */ assignment,
-      ) => ({
-        id: assignment.id,
-        luwangCount: parseFloat(assignment.luwangCount),
-        assignmentDate: assignment.assignmentDate,
-        status: assignment.status,
-        notes: assignment.notes,
-        createdAt: assignment.createdAt,
-        updatedAt: assignment.updatedAt,
-        worker: assignment.worker
-          ? {
-              id: assignment.worker.id,
-              name: assignment.worker.name,
-              code: assignment.worker.code,
-            }
-          : null,
-        pitak: assignment.pitak
-          ? {
-              id: assignment.pitak.id,
-              name: assignment.pitak.name,
-              code: assignment.pitak.code,
-            }
-          : null,
-      }),
-    );
+    const formattedAssignments = assignments.map((assignment) => ({
+      id: assignment.id,
+      // @ts-ignore
+      luwangCount: parseFloat(assignment.luwangCount),
+      assignmentDate: assignment.assignmentDate,
+      status: assignment.status,
+      notes: assignment.notes,
+      createdAt: assignment.createdAt,
+      updatedAt: assignment.updatedAt,
+      // @ts-ignore
+      worker: assignment.worker
+        ? {
+            // @ts-ignore
+            id: assignment.worker.id,
+            // @ts-ignore
+            name: assignment.worker.name,
+          }
+        : null,
+      // @ts-ignore
+      pitak: assignment.pitak
+        ? {
+            // @ts-ignore
+            id: assignment.pitak.id,
+            // @ts-ignore
+            location: assignment.pitak.location,
+          }
+        : null,
+    }));
 
     return {
       status: true,
@@ -100,24 +101,23 @@ module.exports = async (filters = {}, userId) => {
       data: formattedAssignments,
       meta: {
         total: formattedAssignments.length,
-        active: formattedAssignments.filter(
-          (/** @type {{ status: string; }} */ a) => a.status === "active",
-        ).length,
-        completed: formattedAssignments.filter(
-          (/** @type {{ status: string; }} */ a) => a.status === "completed",
-        ).length,
-        cancelled: formattedAssignments.filter(
-          (/** @type {{ status: string; }} */ a) => a.status === "cancelled",
-        ).length,
+        active: formattedAssignments.filter((a) => a.status === "active").length,
+        completed: formattedAssignments.filter((a) => a.status === "completed").length,
+        cancelled: formattedAssignments.filter((a) => a.status === "cancelled").length,
+        sessionId: currentSessionId,
+        // @ts-ignore
+        uniqueWorkers: new Set(assignments.map((a) => a.worker?.id)).size,
+        // @ts-ignore
+        uniquePitaks: new Set(assignments.map((a) => a.pitak?.id)).size,
       },
     };
   } catch (error) {
     console.error("Error getting all assignments:", error);
     return {
       status: false,
+      message: "Failed to retrieve assignments",
       // @ts-ignore
-      message: `Failed to retrieve assignments: ${error.message}`,
-      data: null,
+      data: { errors: [error.message || String(error)] },
     };
   }
 };

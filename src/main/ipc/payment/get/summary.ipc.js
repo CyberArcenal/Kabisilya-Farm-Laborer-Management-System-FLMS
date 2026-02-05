@@ -3,17 +3,18 @@
 
 const Payment = require("../../../../entities/Payment");
 const { AppDataSource } = require("../../../db/dataSource");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
 module.exports = async function getPaymentSummary(params = {}) {
   try {
     // @ts-ignore
-    const { startDate, endDate, workerId, pitakId } = params;
+    const { startDate, endDate, workerId, pitakId, currentSession = false } = params; // New parameter
 
     const paymentRepository = AppDataSource.getRepository(Payment);
 
     // Helper to apply filters to a query builder
     // @ts-ignore
-    const applyFilters = (qb) => {
+    const applyFilters = async (qb) => {
       if (startDate) {
         qb.andWhere("payment.createdAt >= :startDate", { startDate: new Date(startDate) });
       }
@@ -21,12 +22,15 @@ module.exports = async function getPaymentSummary(params = {}) {
         qb.andWhere("payment.createdAt <= :endDate", { endDate: new Date(endDate) });
       }
       if (workerId) {
-        // use joined alias for worker relation
         qb.leftJoin("payment.worker", "worker").andWhere("worker.id = :workerId", { workerId });
       }
       if (pitakId) {
-        // use joined alias for pitak relation
         qb.leftJoin("payment.pitak", "pitak").andWhere("pitak.id = :pitakId", { pitakId });
+      }
+      if (currentSession) {
+        const currentSessionId = await farmSessionDefaultSessionId();
+        qb.leftJoin("payment.session", "session")
+          .andWhere("session.id = :currentSessionId", { currentSessionId });
       }
       return qb;
     };
@@ -40,7 +44,7 @@ module.exports = async function getPaymentSummary(params = {}) {
       "COALESCE(SUM(payment.manualDeduction), 0) as total_manual_deductions",
       "COALESCE(SUM(payment.otherDeductions), 0) as total_other_deductions",
     ]);
-    applyFilters(summaryQB);
+    await applyFilters(summaryQB);
     const summaryRaw = (await summaryQB.getRawOne()) || {};
 
     // Status breakdown (fresh QB)
@@ -50,7 +54,7 @@ module.exports = async function getPaymentSummary(params = {}) {
         "COUNT(payment.id) as count",
         "COALESCE(SUM(payment.netPay), 0) as total_amount",
       ]);
-    applyFilters(statusQB);
+    await applyFilters(statusQB);
     statusQB.groupBy("payment.status");
     const statusBreakdownRaw = await statusQB.getRawMany();
 
@@ -63,7 +67,7 @@ module.exports = async function getPaymentSummary(params = {}) {
         "COUNT(payment.id) as payment_count",
         "COALESCE(SUM(payment.netPay), 0) as total_paid",
       ]);
-    applyFilters(topWorkersQB);
+    await applyFilters(topWorkersQB);
     topWorkersQB.groupBy("worker.id, worker.name").orderBy("total_paid", "DESC").limit(10);
     const topWorkersRaw = await topWorkersQB.getRawMany();
 
@@ -102,6 +106,13 @@ module.exports = async function getPaymentSummary(params = {}) {
         summary,
         statusBreakdown,
         topWorkers,
+        filters: {
+          currentSession,
+          startDate: startDate || "All",
+          endDate: endDate || "All",
+          workerId: workerId || "All",
+          pitakId: pitakId || "All",
+        },
       },
     };
   } catch (error) {

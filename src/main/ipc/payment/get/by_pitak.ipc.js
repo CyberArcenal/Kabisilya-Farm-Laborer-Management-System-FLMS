@@ -4,6 +4,7 @@
 const Payment = require("../../../../entities/Payment");
 const Pitak = require("../../../../entities/Pitak");
 const { AppDataSource } = require("../../../db/dataSource");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
 module.exports = async function getPaymentsByPitak(params = {}) {
   try {
@@ -16,6 +17,10 @@ module.exports = async function getPaymentsByPitak(params = {}) {
       startDate,
       // @ts-ignore
       endDate,
+      // @ts-ignore
+      sessionId,
+      // @ts-ignore
+      currentSession = false, // New parameter
       // @ts-ignore
       limit = 50,
       // @ts-ignore
@@ -62,11 +67,12 @@ module.exports = async function getPaymentsByPitak(params = {}) {
     const orderColumn = SORT_FIELD_MAP[sortBy] || SORT_FIELD_MAP.createdAt;
     const orderDirection = String(sortOrder).toUpperCase() === "ASC" ? "ASC" : "DESC";
 
-    // Base query: join worker and pitak
+    // Base query: join worker, pitak, and session
     const queryBuilder = paymentRepository
       .createQueryBuilder("payment")
       .leftJoinAndSelect("payment.worker", "worker")
       .leftJoinAndSelect("payment.pitak", "pitak")
+      .leftJoinAndSelect("payment.session", "session") // Added session
       .where("pitak.id = :pitakId", { pitakId });
 
     // Apply filters
@@ -86,6 +92,16 @@ module.exports = async function getPaymentsByPitak(params = {}) {
       });
     }
 
+    if (sessionId) {
+      queryBuilder.andWhere("session.id = :sessionId", { sessionId });
+    }
+
+    // Handle current session filter
+    if (currentSession) {
+      const currentSessionId = await farmSessionDefaultSessionId();
+      queryBuilder.andWhere("session.id = :currentSessionId", { currentSessionId });
+    }
+
     // Calculate pagination
     const skip = (Math.max(1, parseInt(page, 10)) - 1) * parseInt(limit, 10);
     const total = await queryBuilder.getCount();
@@ -102,6 +118,7 @@ module.exports = async function getPaymentsByPitak(params = {}) {
       .createQueryBuilder("payment")
       .leftJoin("payment.worker", "worker")
       .leftJoin("payment.pitak", "pitak")
+      .leftJoin("payment.session", "session") // Added session
       .select([
         "COALESCE(SUM(payment.grossPay), 0) as total_gross",
         "COALESCE(SUM(payment.netPay), 0) as total_net",
@@ -114,6 +131,11 @@ module.exports = async function getPaymentsByPitak(params = {}) {
     if (status) summaryQB.andWhere("payment.status = :status", { status });
     if (startDate) summaryQB.andWhere("payment.createdAt >= :startDate", { startDate: new Date(startDate) });
     if (endDate) summaryQB.andWhere("payment.createdAt <= :endDate", { endDate: new Date(endDate) });
+    if (sessionId) summaryQB.andWhere("session.id = :sessionId", { sessionId });
+    if (currentSession) {
+      const currentSessionId = await farmSessionDefaultSessionId();
+      summaryQB.andWhere("session.id = :currentSessionId", { currentSessionId });
+    }
 
     const summary = await summaryQB.getRawOne();
 
@@ -121,6 +143,7 @@ module.exports = async function getPaymentsByPitak(params = {}) {
     const timelineQB = paymentRepository
       .createQueryBuilder("payment")
       .leftJoin("payment.pitak", "pitak")
+      .leftJoin("payment.session", "session") // Added session
       .select([
         "strftime('%Y', payment.createdAt) as year",
         "strftime('%m', payment.createdAt) as month",
@@ -132,6 +155,11 @@ module.exports = async function getPaymentsByPitak(params = {}) {
     if (status) timelineQB.andWhere("payment.status = :status", { status });
     if (startDate) timelineQB.andWhere("payment.createdAt >= :startDate", { startDate: new Date(startDate) });
     if (endDate) timelineQB.andWhere("payment.createdAt <= :endDate", { endDate: new Date(endDate) });
+    if (sessionId) timelineQB.andWhere("session.id = :sessionId", { sessionId });
+    if (currentSession) {
+      const currentSessionId = await farmSessionDefaultSessionId();
+      timelineQB.andWhere("session.id = :currentSessionId", { currentSessionId });
+    }
 
     timelineQB
       .groupBy("strftime('%Y', payment.createdAt), strftime('%m', payment.createdAt)")

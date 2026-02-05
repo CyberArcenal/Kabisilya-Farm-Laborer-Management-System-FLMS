@@ -1,5 +1,7 @@
 // dashboard/handlers/financialAnalytics.js
 //@ts-check
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
+
 class FinancialAnalytics {
   /**
      * @param {{ payment: any; debt: any; }} repositories
@@ -8,6 +10,7 @@ class FinancialAnalytics {
   // @ts-ignore
   async getFinancialOverview(repositories, params) {
     const { payment: paymentRepo, debt: debtRepo } = repositories;
+    const { currentSession = false } = params;
     
     try {
       // Current month calculations
@@ -16,8 +19,14 @@ class FinancialAnalytics {
       const startOfPreviousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       const endOfPreviousMonth = new Date(now.getFullYear(), now.getMonth(), 0);
       
+      // Get current session ID if requested
+      let sessionId = null;
+      if (currentSession) {
+        sessionId = await farmSessionDefaultSessionId();
+      }
+      
       // Get total payments this month
-      const currentMonthPayments = await paymentRepo
+      const currentMonthPaymentsQuery = paymentRepo
         .createQueryBuilder("payment")
         .select([
           "SUM(payment.grossPay) as totalGross",
@@ -26,11 +35,16 @@ class FinancialAnalytics {
           "COUNT(payment.id) as paymentCount"
         ])
         .where("payment.paymentDate >= :startDate", { startDate: startOfMonth })
-        .andWhere("payment.status = :status", { status: 'completed' })
-        .getRawOne();
+        .andWhere("payment.status = :status", { status: 'completed' });
+      
+      if (currentSession) {
+        currentMonthPaymentsQuery.andWhere("payment.session.id = :sessionId", { sessionId });
+      }
+      
+      const currentMonthPayments = await currentMonthPaymentsQuery.getRawOne();
       
       // Get total payments previous month
-      const previousMonthPayments = await paymentRepo
+      const previousMonthPaymentsQuery = paymentRepo
         .createQueryBuilder("payment")
         .select([
           "SUM(payment.grossPay) as totalGross",
@@ -40,11 +54,16 @@ class FinancialAnalytics {
           start: startOfPreviousMonth, 
           end: endOfPreviousMonth 
         })
-        .andWhere("payment.status = :status", { status: 'completed' })
-        .getRawOne();
+        .andWhere("payment.status = :status", { status: 'completed' });
+      
+      if (currentSession) {
+        previousMonthPaymentsQuery.andWhere("payment.session.id = :sessionId", { sessionId });
+      }
+      
+      const previousMonthPayments = await previousMonthPaymentsQuery.getRawOne();
       
       // Get debt statistics
-      const debtStats = await debtRepo
+      const debtStatsQuery = debtRepo
         .createQueryBuilder("debt")
         .select([
           "COUNT(debt.id) as totalDebts",
@@ -52,11 +71,16 @@ class FinancialAnalytics {
           "SUM(debt.balance) as totalBalance",
           "SUM(debt.totalPaid) as totalPaid",
           "AVG(debt.interestRate) as avgInterestRate"
-        ])
-        .getRawOne();
+        ]);
+      
+      if (currentSession) {
+        debtStatsQuery.where("debt.session.id = :sessionId", { sessionId });
+      }
+      
+      const debtStats = await debtStatsQuery.getRawOne();
       
       // Get debt by status
-      const debtByStatus = await debtRepo
+      const debtByStatusQuery = debtRepo
         .createQueryBuilder("debt")
         .select([
           "debt.status",
@@ -64,8 +88,13 @@ class FinancialAnalytics {
           "SUM(debt.balance) as totalBalance",
           "SUM(debt.amount) as totalAmount"
         ])
-        .groupBy("debt.status")
-        .getRawMany();
+        .groupBy("debt.status");
+      
+      if (currentSession) {
+        debtByStatusQuery.where("debt.session.id = :sessionId", { sessionId });
+      }
+      
+      const debtByStatus = await debtByStatusQuery.getRawMany();
       
       // Calculate month-over-month growth
       const currentNet = parseFloat(currentMonthPayments?.totalNet) || 0;
@@ -73,7 +102,7 @@ class FinancialAnalytics {
       const growthRate = previousNet > 0 ? ((currentNet - previousNet) / previousNet) * 100 : 0;
       
       // Get upcoming debt due dates
-      const upcomingDueDates = await debtRepo
+      const upcomingDueDatesQuery = debtRepo
         .createQueryBuilder("debt")
         .leftJoin("debt.worker", "worker")
         .select([
@@ -87,8 +116,13 @@ class FinancialAnalytics {
         .andWhere("debt.dueDate IS NOT NULL")
         .andWhere("debt.dueDate >= :today", { today: new Date() })
         .orderBy("debt.dueDate", "ASC")
-        .limit(10)
-        .getRawMany();
+        .limit(10);
+      
+      if (currentSession) {
+        upcomingDueDatesQuery.andWhere("debt.session.id = :sessionId", { sessionId });
+      }
+      
+      const upcomingDueDates = await upcomingDueDatesQuery.getRawMany();
       
       return {
         status: true,
@@ -135,7 +169,10 @@ class FinancialAnalytics {
             // @ts-ignore
             daysUntilDue: Math.ceil((new Date(item.debt_dueDate) - new Date()) / (1000 * 60 * 60 * 24))
           })),
-          timestamp: new Date()
+          timestamp: new Date(),
+          filters: {
+            currentSession: currentSession
+          }
         }
       };
     } catch (error) {
@@ -146,13 +183,19 @@ class FinancialAnalytics {
   
   /**
      * @param {{ debt: any; debtHistory: any; }} repositories
-     * @param {{ status: any; workerId: any; startDate: any; endDate: any; }} params
+     * @param {{ status: any; workerId: any; startDate: any; endDate: any; currentSession?: boolean; }} params
      */
   async getDebtSummary(repositories, params) {
     const { debt: debtRepo, debtHistory: debtHistoryRepo } = repositories;
-    const { status, workerId, startDate, endDate } = params;
+    const { status, workerId, startDate, endDate, currentSession = false } = params;
     
     try {
+      // Get current session ID if requested
+      let sessionId = null;
+      if (currentSession) {
+        sessionId = await farmSessionDefaultSessionId();
+      }
+      
       let query = debtRepo.createQueryBuilder("debt");
       
       // Select fields
@@ -174,6 +217,12 @@ class FinancialAnalytics {
       // Apply filters
       const whereConditions = [];
       const parameters = {};
+      
+      if (currentSession) {
+        whereConditions.push("debt.session.id = :sessionId");
+        // @ts-ignore
+        parameters.sessionId = sessionId;
+      }
       
       if (status) {
         whereConditions.push("debt.status = :status");
@@ -211,8 +260,9 @@ class FinancialAnalytics {
       // Get debt payment history for the period
       let paymentHistory = [];
       if (startDate && endDate) {
-        paymentHistory = await debtHistoryRepo
+        const paymentHistoryQuery = debtHistoryRepo
           .createQueryBuilder("history")
+          .leftJoin("history.debt", "debt")
           .select([
             "DATE(history.transactionDate) as date",
             "SUM(history.amountPaid) as totalPaid",
@@ -224,8 +274,13 @@ class FinancialAnalytics {
           })
           .andWhere("history.transactionType = :type", { type: 'payment' })
           .groupBy("DATE(history.transactionDate)")
-          .orderBy("date", "ASC")
-          .getRawMany();
+          .orderBy("date", "ASC");
+        
+        if (currentSession) {
+          paymentHistoryQuery.andWhere("debt.session.id = :sessionId", { sessionId });
+        }
+        
+        paymentHistory = await paymentHistoryQuery.getRawMany();
       }
       
       // Calculate summary statistics
@@ -312,7 +367,8 @@ class FinancialAnalytics {
             status: status,
             workerId: workerId,
             startDate: startDate,
-            endDate: endDate
+            endDate: endDate,
+            currentSession: currentSession
           }
         }
       };
@@ -324,11 +380,11 @@ class FinancialAnalytics {
   
   /**
      * @param {{ payment: any; paymentHistory: any; }} repositories
-     * @param {{ period?: "month" | undefined; status: any; workerId: any; }} params
+     * @param {{ period?: "month" | undefined; status: any; workerId: any; currentSession?: boolean; }} params
      */
   async getPaymentSummary(repositories, params) {
     const { payment: paymentRepo, paymentHistory: paymentHistoryRepo } = repositories;
-    const { period = 'month', status, workerId } = params;
+    const { period = 'month', status, workerId, currentSession = false } = params;
     
     try {
       // Calculate date range
@@ -355,6 +411,12 @@ class FinancialAnalytics {
           startDate.setMonth(startDate.getMonth() - 1);
       }
       
+      // Get current session ID if requested
+      let sessionId = null;
+      if (currentSession) {
+        sessionId = await farmSessionDefaultSessionId();
+      }
+      
       // Build query for payments
       let query = paymentRepo
         .createQueryBuilder("payment")
@@ -377,6 +439,12 @@ class FinancialAnalytics {
       const whereConditions = ["payment.paymentDate BETWEEN :start AND :end"];
       const parameters = { start: startDate, end: endDate };
       
+      if (currentSession) {
+        whereConditions.push("payment.session.id = :sessionId");
+        // @ts-ignore
+        parameters.sessionId = sessionId;
+      }
+      
       if (status) {
         whereConditions.push("payment.status = :status");
         // @ts-ignore
@@ -395,7 +463,7 @@ class FinancialAnalytics {
       const payments = await query.getRawMany();
       
       // Get payment statistics by period
-      const paymentStats = await paymentRepo
+      const paymentStatsQuery = paymentRepo
         .createQueryBuilder("payment")
         .select([
           "DATE(payment.paymentDate) as date",
@@ -405,13 +473,19 @@ class FinancialAnalytics {
           "COUNT(payment.id) as paymentCount"
         ])
         .where("payment.paymentDate BETWEEN :start AND :end", { start: startDate, end: endDate })
-        .andWhere("payment.status = :status", { status: 'completed' })
+        .andWhere("payment.status = :status", { status: 'completed' });
+      
+      if (currentSession) {
+        paymentStatsQuery.andWhere("payment.session.id = :sessionId", { sessionId });
+      }
+      
+      const paymentStats = await paymentStatsQuery
         .groupBy("DATE(payment.paymentDate)")
         .orderBy("date", "ASC")
         .getRawMany();
       
       // Get payment methods breakdown
-      const paymentMethods = await paymentRepo
+      const paymentMethodsQuery = paymentRepo
         .createQueryBuilder("payment")
         .select([
           "payment.paymentMethod",
@@ -420,7 +494,13 @@ class FinancialAnalytics {
           "AVG(payment.netPay) as averageAmount"
         ])
         .where("payment.paymentDate BETWEEN :start AND :end", { start: startDate, end: endDate })
-        .andWhere("payment.paymentMethod IS NOT NULL")
+        .andWhere("payment.paymentMethod IS NOT NULL");
+      
+      if (currentSession) {
+        paymentMethodsQuery.andWhere("payment.session.id = :sessionId", { sessionId });
+      }
+      
+      const paymentMethods = await paymentMethodsQuery
         .groupBy("payment.paymentMethod")
         .getRawMany();
       
@@ -529,7 +609,10 @@ class FinancialAnalytics {
             newValue: history.history_newValue,
             changeDate: history.history_changeDate,
             performedBy: history.history_performedBy
-          }))
+          })),
+          filters: {
+            currentSession: currentSession
+          }
         }
       };
     } catch (error) {
@@ -540,16 +623,17 @@ class FinancialAnalytics {
   
   /**
      * @param {{ payment: any; }} repositories
-     * @param {{ period?: "month" | undefined; groupBy?: "daily" | undefined; }} params
+     * @param {{ period?: "month" | undefined; groupBy?: "daily" | undefined; currentSession?: boolean; }} params
      */
   async getRevenueTrend(repositories, params) {
     const { payment: paymentRepo } = repositories;
-    const { period = 'month', groupBy = 'daily' } = params;
+    const { period = 'month', groupBy = 'daily', currentSession = false } = params;
     
     try {
       // Calculate date range
       const endDate = new Date();
       let startDate = new Date();
+      // @ts-ignore
       // @ts-ignore
       let dateFormat, groupByClause;
       
@@ -584,8 +668,14 @@ class FinancialAnalytics {
           groupByClause = 'DATE(payment.paymentDate)';
       }
       
+      // Get current session ID if requested
+      let sessionId = null;
+      if (currentSession) {
+        sessionId = await farmSessionDefaultSessionId();
+      }
+      
       // Get revenue trend data
-      const trendData = await paymentRepo
+      const trendDataQuery = paymentRepo
         .createQueryBuilder("payment")
         .select([
           `${groupByClause} as period`,
@@ -596,7 +686,13 @@ class FinancialAnalytics {
           "AVG(payment.netPay) as averageTransactionValue"
         ])
         .where("payment.paymentDate BETWEEN :start AND :end", { start: startDate, end: endDate })
-        .andWhere("payment.status = :status", { status: 'completed' })
+        .andWhere("payment.status = :status", { status: 'completed' });
+      
+      if (currentSession) {
+        trendDataQuery.andWhere("payment.session.id = :sessionId", { sessionId });
+      }
+      
+      const trendData = await trendDataQuery
         .groupBy(groupByClause)
         .orderBy("period", "ASC")
         .getRawMany();
@@ -615,7 +711,7 @@ class FinancialAnalytics {
       }
       
       // Get revenue by payment method
-      const revenueByMethod = await paymentRepo
+      const revenueByMethodQuery = paymentRepo
         .createQueryBuilder("payment")
         .select([
           "payment.paymentMethod",
@@ -625,12 +721,18 @@ class FinancialAnalytics {
         ])
         .where("payment.paymentDate BETWEEN :start AND :end", { start: startDate, end: endDate })
         .andWhere("payment.status = :status", { status: 'completed' })
-        .andWhere("payment.paymentMethod IS NOT NULL")
+        .andWhere("payment.paymentMethod IS NOT NULL");
+      
+      if (currentSession) {
+        revenueByMethodQuery.andWhere("payment.session.id = :sessionId", { sessionId });
+      }
+      
+      const revenueByMethod = await revenueByMethodQuery
         .groupBy("payment.paymentMethod")
         .getRawMany();
       
       // Get revenue by worker (top earners)
-      const topEarners = await paymentRepo
+      const topEarnersQuery = paymentRepo
         .createQueryBuilder("payment")
         .leftJoin("payment.worker", "worker")
         .select([
@@ -640,7 +742,13 @@ class FinancialAnalytics {
           "AVG(payment.netPay) as averagePayment"
         ])
         .where("payment.paymentDate BETWEEN :start AND :end", { start: startDate, end: endDate })
-        .andWhere("payment.status = :status", { status: 'completed' })
+        .andWhere("payment.status = :status", { status: 'completed' });
+      
+      if (currentSession) {
+        topEarnersQuery.andWhere("payment.session.id = :sessionId", { sessionId });
+      }
+      
+      const topEarners = await topEarnersQuery
         .groupBy("worker.name")
         .orderBy("revenue", "DESC")
         .limit(10)
@@ -701,7 +809,10 @@ class FinancialAnalytics {
             paymentCount: parseInt(earner.paymentCount),
             averagePayment: parseFloat(earner.averagePayment) || 0,
             percentage: summary.totalNet > 0 ? (parseFloat(earner.revenue) / summary.totalNet) * 100 : 0
-          }))
+          })),
+          filters: {
+            currentSession: currentSession
+          }
         }
       };
     } catch (error) {
@@ -712,11 +823,11 @@ class FinancialAnalytics {
   
   /**
      * @param {{ debt: any; debtHistory: any; }} repositories
-     * @param {{ period?: "month" | undefined; }} params
+     * @param {{ period?: "month" | undefined; currentSession?: boolean; }} params
      */
   async getDebtCollectionRate(repositories, params) {
     const { debt: debtRepo, debtHistory: debtHistoryRepo } = repositories;
-    const { period = 'month' } = params;
+    const { period = 'month', currentSession = false } = params;
     
     try {
       // Calculate date range
@@ -743,8 +854,14 @@ class FinancialAnalytics {
           startDate.setMonth(startDate.getMonth() - 1);
       }
       
+      // Get current session ID if requested
+      let sessionId = null;
+      if (currentSession) {
+        sessionId = await farmSessionDefaultSessionId();
+      }
+      
       // Get debts created in the period
-      const debtsInPeriod = await debtRepo
+      const debtsInPeriodQuery = debtRepo
         .createQueryBuilder("debt")
         .select([
           "debt.id",
@@ -754,12 +871,18 @@ class FinancialAnalytics {
           "debt.dateIncurred",
           "debt.status"
         ])
-        .where("debt.dateIncurred BETWEEN :start AND :end", { start: startDate, end: endDate })
-        .getMany();
+        .where("debt.dateIncurred BETWEEN :start AND :end", { start: startDate, end: endDate });
+      
+      if (currentSession) {
+        debtsInPeriodQuery.andWhere("debt.session.id = :sessionId", { sessionId });
+      }
+      
+      const debtsInPeriod = await debtsInPeriodQuery.getMany();
       
       // Get debt payments in the period
-      const paymentsInPeriod = await debtHistoryRepo
+      const paymentsInPeriodQuery = debtHistoryRepo
         .createQueryBuilder("history")
+        .leftJoin("history.debt", "debt")
         .select([
           "DATE(history.transactionDate) as date",
           "SUM(history.amountPaid) as totalCollected",
@@ -770,8 +893,13 @@ class FinancialAnalytics {
         .andWhere("history.transactionType = :type", { type: 'payment' })
         .groupBy("DATE(history.transactionDate)")
         .addGroupBy("history.debtId")
-        .orderBy("date", "ASC")
-        .getRawMany();
+        .orderBy("date", "ASC");
+      
+      if (currentSession) {
+        paymentsInPeriodQuery.andWhere("debt.session.id = :sessionId", { sessionId });
+      }
+      
+      const paymentsInPeriod = await paymentsInPeriodQuery.getRawMany();
       
       // Calculate collection metrics
       const totalDebtAmount = debtsInPeriod.reduce((/** @type {number} */ sum, /** @type {{ amount: string; }} */ debt) => sum + parseFloat(debt.amount), 0);
@@ -903,7 +1031,10 @@ class FinancialAnalytics {
             "Collection rate is healthy",
             "Continue current collection practices",
             "Monitor aging debts regularly"
-          ]
+          ],
+          filters: {
+            currentSession: currentSession
+          }
         }
       };
     } catch (error) {

@@ -1,16 +1,12 @@
-// src/ipc/pitak/get/by_status.ipc
+// src/ipc/pitak/get/by_status.ipc.js
 //@ts-check
 
 const Pitak = require("../../../../entities/Pitak");
 const { AppDataSource } = require("../../../db/dataSource");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
 // @ts-ignore
-module.exports = async (
-  /** @type {string} */ status,
-  filters = {},
-  // @ts-ignore
-  /** @type {any} */ userId,
-) => {
+module.exports = async (status, filters = {}, userId) => {
   try {
     const validStatuses = ["active", "inactive", "completed"];
     if (!validStatuses.includes(status)) {
@@ -22,11 +18,14 @@ module.exports = async (
     }
 
     const pitakRepo = AppDataSource.getRepository(Pitak);
+    const currentSessionId = await farmSessionDefaultSessionId();
 
     const query = pitakRepo
       .createQueryBuilder("pitak")
       .leftJoinAndSelect("pitak.bukid", "bukid")
-      .where("pitak.status = :status", { status });
+      .leftJoinAndSelect("bukid.session", "session")
+      .where("pitak.status = :status", { status })
+      .andWhere("session.id = :sessionId", { sessionId: currentSessionId });
 
     // Apply additional filters
     // @ts-ignore
@@ -37,7 +36,6 @@ module.exports = async (
 
     // @ts-ignore
     if (filters.location) {
-      // @ts-ignore
       query.andWhere("pitak.location LIKE :location", {
         // @ts-ignore
         location: `%${filters.location}%`,
@@ -46,7 +44,6 @@ module.exports = async (
 
     // @ts-ignore
     if (filters.minLuWang) {
-      // @ts-ignore
       query.andWhere("pitak.totalLuwang >= :minLuWang", {
         // @ts-ignore
         minLuWang: filters.minLuWang,
@@ -55,7 +52,6 @@ module.exports = async (
 
     // @ts-ignore
     if (filters.maxLuWang) {
-      // @ts-ignore
       query.andWhere("pitak.totalLuwang <= :maxLuWang", {
         // @ts-ignore
         maxLuWang: filters.maxLuWang,
@@ -100,6 +96,8 @@ module.exports = async (
     // Calculate statistics for this status
     const statsQuery = pitakRepo
       .createQueryBuilder("pitak")
+      .leftJoin("pitak.bukid", "bukid")
+      .leftJoin("bukid.session", "session")
       .select([
         "COUNT(*) as total",
         "SUM(pitak.totalLuwang) as totalLuWang",
@@ -109,11 +107,11 @@ module.exports = async (
         "MIN(pitak.createdAt) as oldest",
         "MAX(pitak.createdAt) as newest",
       ])
-      .where("pitak.status = :status", { status });
+      .where("pitak.status = :status", { status })
+      .andWhere("session.id = :sessionId", { sessionId: currentSessionId });
 
     // @ts-ignore
     if (filters.bukidId) {
-      // @ts-ignore
       statsQuery.andWhere("pitak.bukidId = :bukidId", {
         // @ts-ignore
         bukidId: filters.bukidId,
@@ -125,28 +123,25 @@ module.exports = async (
     return {
       status: true,
       message: `${status.charAt(0).toUpperCase() + status.slice(1)} pitaks retrieved successfully`,
-      data: pitaks.map(
-        (p,
-        ) => ({
-          id: p.id,
-          location: p.location,
-          // @ts-ignore
-          totalLuwang: parseFloat(p.totalLuwang),
-          // @ts-ignore
-          bukid: p.bukid
-            ? {
-                // @ts-ignore
-                id: p.bukid.id,
-                // @ts-ignore
-                name: p.bukid.name,
-                // @ts-ignore
-                location: p.bukid.location,
-              }
-            : null,
-          createdAt: p.createdAt,
-          updatedAt: p.updatedAt,
-        }),
-      ),
+      data: pitaks.map((p) => ({
+        id: p.id,
+        location: p.location,
+        // @ts-ignore
+        totalLuwang: parseFloat(p.totalLuwang),
+        // @ts-ignore
+        bukid: p.bukid
+          ? {
+              // @ts-ignore
+              id: p.bukid.id,
+              // @ts-ignore
+              name: p.bukid.name,
+              // @ts-ignore
+              location: p.bukid.location,
+            }
+          : null,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt,
+      })),
       meta: {
         total,
         page,

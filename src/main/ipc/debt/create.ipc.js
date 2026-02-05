@@ -3,13 +3,16 @@
 
 const { farmSessionDefaultSessionId } = require("../../../utils/system");
 
-
-module.exports = async (/** @type {{ worker_id: any; amount: any; reason: any; dueDate: any; interestRate: any; paymentTerm: any; }} */ params, /** @type {{ manager: { getRepository: (arg0: string) => any; }; }} */ queryRunner) => {
+module.exports = async (
+  /** @type {{ worker_id: number; amount: number; reason?: string; dueDate?: Date; interestRate?: number; paymentTerm?: string; }} */ params,
+  /** @type {{ manager: { getRepository: (arg0: string) => any; }; }} */ queryRunner
+) => {
   try {
     const { worker_id, amount, reason, dueDate, interestRate, paymentTerm } = params;
 
     const debtRepository = queryRunner.manager.getRepository("Debt");
     const workerRepository = queryRunner.manager.getRepository("Worker");
+    const debtHistoryRepository = queryRunner.manager.getRepository("DebtHistory");
 
     // ✅ Always require default session
     const sessionId = await farmSessionDefaultSessionId();
@@ -48,15 +51,29 @@ module.exports = async (/** @type {{ worker_id: any; amount: any; reason: any; d
 
     const savedDebt = await debtRepository.save(debt);
 
+    // ✅ Log creation in DebtHistory
+    const debtHistory = debtHistoryRepository.create({
+      debt: { id: savedDebt.id },
+      amountPaid: 0,
+      previousBalance: 0,
+      newBalance: amount,
+      transactionType: "creation",
+      notes: reason ? `Debt created: ${reason}` : "Debt created",
+      transactionDate: new Date(),
+    });
+    await debtHistoryRepository.save(debtHistory);
+
     // Update worker's total debt summary
-    worker.totalDebt = parseFloat(worker.totalDebt) + parseFloat(amount);
-    worker.currentBalance = parseFloat(worker.currentBalance) + parseFloat(amount);
+    // @ts-ignore
+    worker.totalDebt = parseFloat(worker.totalDebt || 0) + parseFloat(amount);
+    // @ts-ignore
+    worker.currentBalance = parseFloat(worker.currentBalance || 0) + parseFloat(amount);
     await workerRepository.save(worker);
 
     return {
       status: true,
       message: "Debt created successfully",
-      data: { ...savedDebt, sessionId },
+      data: { ...savedDebt, sessionId, historyEntry: debtHistory },
     };
   } catch (error) {
     console.error("Error creating debt:", error);

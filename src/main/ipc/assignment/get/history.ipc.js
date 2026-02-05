@@ -2,9 +2,10 @@
 //@ts-check
 const Assignment = require("../../../../entities/Assignment");
 const { AppDataSource } = require("../../../db/dataSource");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
 /**
- * Get assignment history (status changes and updates)
+ * Get assignment history (status changes and updates) scoped to current session
  * @param {number} assignmentId - Assignment ID
  * @param {number} userId - User ID for logging
  * @returns {Promise<Object>} Response object
@@ -16,88 +17,90 @@ module.exports = async (assignmentId, userId) => {
       return {
         status: false,
         message: "Assignment ID is required",
-        data: null
+        data: { errors: ["Missing assignmentId parameter"] },
       };
     }
 
     const assignmentRepo = AppDataSource.getRepository(Assignment);
-    
-    // Get assignment with relations
+    const currentSessionId = await farmSessionDefaultSessionId();
+
+    // Get assignment with relations, scoped to session
     const assignment = await assignmentRepo.findOne({
-      where: { id: assignmentId },
-      relations: ["worker", "pitak"]
+      // @ts-ignore
+      where: { id: assignmentId, session: { id: currentSessionId } },
+      relations: ["worker", "pitak", "session"],
     });
 
     if (!assignment) {
       return {
         status: false,
-        message: "Assignment not found",
-        data: null
+        message: "Assignment not found in current session",
+        data: {
+          errors: [
+            `Assignment ${assignmentId} not found or not part of active session`,
+          ],
+        },
       };
     }
 
     // Parse notes to extract history
     const history = [];
-    const notes = assignment.notes || '';
-    
-    // Split notes by newline and look for history markers
+    const notes = assignment.notes || "";
+
     // @ts-ignore
-    const noteLines = notes.split('\n').filter((/** @type {string} */ line) => line.trim());
-    
-    noteLines.forEach((/** @type {string} */ line) => {
-      // Look for status change markers
-      if (line.includes('[Status Change to')) {
+    const noteLines = notes.split("\n").filter((line) => line.trim());
+
+    // @ts-ignore
+    noteLines.forEach((line) => {
+      if (line.includes("[Status Change to")) {
         const match = line.match(/\[Status Change to (\w+)\]:\s*(.+)/);
         if (match) {
           history.push({
-            type: 'STATUS_CHANGE',
-            from: assignment.status, // Note: This assumes current status is the last one
+            type: "STATUS_CHANGE",
             to: match[1],
             reason: match[2].trim(),
-            timestamp: assignment.updatedAt
+            timestamp: assignment.updatedAt,
           });
         }
-      }
-      // Look for LuWang update markers
-      else if (line.includes('[LuWang Update')) {
-        const match = line.match(/\[LuWang Update ([\d.]+) → ([\d.]+)\]:\s*(.+)/);
+      } else if (line.includes("[LuWang Update")) {
+        const match = line.match(
+          /\[LuWang Update ([\d.]+) → ([\d.]+)\]:\s*(.+)/,
+        );
         if (match) {
           history.push({
-            type: 'LUWANG_UPDATE',
+            type: "LUWANG_UPDATE",
             from: parseFloat(match[1]),
             to: parseFloat(match[2]),
-            difference: (parseFloat(match[2]) - parseFloat(match[1])).toFixed(2),
+            difference: (parseFloat(match[2]) - parseFloat(match[1])).toFixed(
+              2,
+            ),
             reason: match[3].trim(),
-            timestamp: assignment.updatedAt
+            timestamp: assignment.updatedAt,
           });
         }
-      }
-      // Look for reassignment markers
-      else if (line.includes('[Reassignment]')) {
+      } else if (line.includes("[Reassignment]")) {
         const match = line.match(/\[Reassignment\]:\s*(.+)/);
         if (match) {
           history.push({
-            type: 'REASSIGNMENT',
+            type: "REASSIGNMENT",
             details: match[1].trim(),
-            timestamp: assignment.updatedAt
+            timestamp: assignment.updatedAt,
           });
         }
-      }
-      // Regular notes
-      else if (!line.startsWith('[')) {
+      } else if (!line.startsWith("[")) {
         history.push({
-          type: 'NOTE',
+          type: "NOTE",
           content: line.trim(),
-          timestamp: assignment.createdAt // Approximate
+          timestamp: assignment.createdAt,
         });
       }
     });
 
     // Add creation as first history entry
     history.unshift({
-      type: 'CREATED',
-      details: 'Assignment created',
-      timestamp: assignment.createdAt
+      type: "CREATED",
+      details: "Assignment created",
+      timestamp: assignment.createdAt,
     });
 
     // Sort history by timestamp (newest first)
@@ -115,37 +118,37 @@ module.exports = async (assignmentId, userId) => {
           assignmentDate: assignment.assignmentDate,
           status: assignment.status,
           // @ts-ignore
-          worker: assignment.worker ? {
+          worker: assignment.worker
             // @ts-ignore
-            id: assignment.worker.id,
-            // @ts-ignore
-            name: assignment.worker.name
-          } : null,
+            ? { id: assignment.worker.id, name: assignment.worker.name }
+            : null,
           // @ts-ignore
-          pitak: assignment.pitak ? {
+          pitak: assignment.pitak
             // @ts-ignore
-            id: assignment.pitak.id,
-            // @ts-ignore
-            name: assignment.pitak.name
-          } : null
+            ? { id: assignment.pitak.id, name: assignment.pitak.name }
+            : null,
+          // @ts-ignore
+          session: { id: assignment.session.id },
         },
         history,
         summary: {
           totalHistoryEntries: history.length,
-          statusChanges: history.filter(h => h.type === 'STATUS_CHANGE').length,
-          luwangUpdates: history.filter(h => h.type === 'LUWANG_UPDATE').length,
-          notes: history.filter(h => h.type === 'NOTE').length
-        }
-      }
+          statusChanges: history.filter((h) => h.type === "STATUS_CHANGE")
+            .length,
+          luwangUpdates: history.filter((h) => h.type === "LUWANG_UPDATE")
+            .length,
+          notes: history.filter((h) => h.type === "NOTE").length,
+        },
+      },
+      meta: { sessionId: currentSessionId },
     };
-
   } catch (error) {
     console.error("Error getting assignment history:", error);
     return {
       status: false,
+      message: "Failed to retrieve assignment history",
       // @ts-ignore
-      message: `Failed to retrieve assignment history: ${error.message}`,
-      data: null
+      data: { errors: [error.message || String(error)] },
     };
   }
 };

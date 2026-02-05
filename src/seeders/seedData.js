@@ -130,34 +130,34 @@ async function seedData() {
     const workers = await seedWorkers(workerRepo);
 
     console.log("📋 Seeding Assignments...");
-    const assignments = await seedAssignments(assignmentRepo, workers, pitaks, sessions); // ✅ UPDATED
+    // const assignments = await seedAssignments(assignmentRepo, workers, pitaks, sessions); // ✅ UPDATED
 
     console.log("💸 Seeding Debts...");
-    const debts = await seedDebts(debtRepo, workers, sessions); // ✅ UPDATED
+    // const debts = await seedDebts(debtRepo, workers, sessions); // ✅ UPDATED
 
     console.log("📝 Seeding Debt History...");
-    await seedDebtHistory(debtHistoryRepo, debts);
+    // await seedDebtHistory(debtHistoryRepo, debts);
 
     console.log("💰 Seeding Payments...");
-    const payments = await seedPayments(paymentRepo, workers, pitaks, sessions); // ✅ UPDATED
+    // const payments = await seedPayments(paymentRepo, workers, pitaks, sessions); // ✅ UPDATED
 
     console.log("📊 Seeding Payment History...");
-    await seedPaymentHistory(paymentHistoryRepo, payments);
+    // await seedPaymentHistory(paymentHistoryRepo, payments);
 
     console.log("👤 Seeding Users...");
     const users = await seedUsers(userRepo);
 
     console.log("📱 Seeding User Activities...");
-    await seedUserActivities(userActivityRepo, users, sessions); // ✅ UPDATED
+    // await seedUserActivities(userActivityRepo, users, sessions); // ✅ UPDATED
 
     console.log("🔍 Seeding Audit Trails...");
-    await seedAuditTrails(auditTrailRepo);
+    // await seedAuditTrails(auditTrailRepo);
 
     console.log("🔔 Seeding Notifications...");
-    await seedNotifications(notificationRepo);
+    // await seedNotifications(notificationRepo);
 
     console.log("⚙️ Seeding System Settings...");
-    await seedSystemSettings(systemSettingRepo);
+    // await seedSystemSettings(systemSettingRepo);
 
     // Re-enable foreign keys
     await seedDataSource.query("PRAGMA foreign_keys = ON");
@@ -168,9 +168,9 @@ async function seedData() {
     console.log(`   Bukids: ${bukids.length}`);
     console.log(`   Pitaks: ${pitaks.length}`);
     console.log(`   Workers: ${workers.length}`);
-    console.log(`   Assignments: ${assignments.length}`);
-    console.log(`   Debts: ${debts.length}`);
-    console.log(`   Payments: ${payments.length}`);
+    // console.log(`   Assignments: ${assignments.length}`);
+    // console.log(`   Debts: ${debts.length}`);
+    // console.log(`   Payments: ${payments.length}`);
     console.log(`   Users: ${users.length}`);
 
     // Destroy the connection when done

@@ -263,7 +263,7 @@ function getAppUrl() {
     log("INFO", `Development mode - URL: ${devServerURL}`);
     return devServerURL;
   } else {
-    const prodPath = path.join(__dirname, "..", "..", "dist", "index.html");
+    const prodPath = path.join(__dirname, "..", "..", "dist", "renderer", "index.html");
 
     if (!fs.existsSync(prodPath)) {
       const possiblePaths = [

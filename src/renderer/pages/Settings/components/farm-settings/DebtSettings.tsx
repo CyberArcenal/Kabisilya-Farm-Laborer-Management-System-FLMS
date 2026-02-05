@@ -14,17 +14,24 @@ export const DebtSettings: React.FC<DebtSettingsProps> = ({
     onChange(field, value);
   };
 
-  const toggleStatusOption = (status: string) => {
-    const currentOptions = settings.status_options || [];
-    const updated = currentOptions.includes(status)
-      ? currentOptions.filter(s => s !== status)
-      : [...currentOptions, status];
-    updateField('status_options', updated);
-  };
-
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Debt Allocation Strategy
+          </label>
+          <select
+            value={settings.debt_allocation_strategy || 'auto'}
+            onChange={(e) => updateField('debt_allocation_strategy', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          >
+            <option value="auto">Auto</option>
+            <option value="equal">Equal</option>
+            <option value="proportional">Proportional</option>
+          </select>
+        </div>
+
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Default Interest Rate (%)
@@ -64,78 +71,18 @@ export const DebtSettings: React.FC<DebtSettingsProps> = ({
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Max Debt Amount
+            Debt Limit
           </label>
           <input
             type="number"
-            value={settings.max_debt_amount || 0}
-            onChange={(e) => updateField('max_debt_amount', parseFloat(e.target.value) || 0)}
+            value={settings.debt_limit || 0}
+            onChange={(e) => updateField('debt_limit', parseFloat(e.target.value) || 0)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
           />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Interest Calculation Method
-          </label>
-          <select
-            value={settings.interest_calculation_method || 'simple'}
-            onChange={(e) => updateField('interest_calculation_method', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          >
-            <option value="simple">Simple Interest</option>
-            <option value="compound">Compound Interest</option>
-          </select>
-        </div>
-
-        {settings.interest_calculation_method === 'compound' && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Compound Frequency
-            </label>
-            <select
-              value={settings.compound_frequency || 'monthly'}
-              onChange={(e) => updateField('compound_frequency', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            >
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-            </select>
-          </div>
-        )}
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Status Options
-        </label>
-        <div className="flex flex-wrap gap-2">
-          {['pending', 'partially_paid', 'paid', 'cancelled', 'overdue'].map((status) => (
-            <label key={status} className="flex items-center gap-1">
-              <input
-                type="checkbox"
-                checked={(settings.status_options || []).includes(status)}
-                onChange={() => toggleStatusOption(status)}
-                className="rounded border-gray-300"
-              />
-              <span className="text-sm text-gray-700 capitalize">{status.replace('_', ' ')}</span>
-            </label>
-          ))}
         </div>
       </div>
 
       <div className="space-y-3">
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={settings.carry_over_to_next_session || false}
-            onChange={(e) => updateField('carry_over_to_next_session', e.target.checked)}
-            className="rounded border-gray-300"
-          />
-          <span className="text-sm text-gray-700">Carry Over to Next Session</span>
-        </label>
-
         <label className="flex items-center gap-2">
           <input
             type="checkbox"

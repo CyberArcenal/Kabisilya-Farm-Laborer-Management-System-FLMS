@@ -1,10 +1,11 @@
 // src/ipc/assignment/get/by_date.ipc.js
 //@ts-check
 const Assignment = require("../../../../entities/Assignment");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 const { AppDataSource } = require("../../../db/dataSource");
 
 /**
- * Get assignments by date
+ * Get assignments by date scoped to current session
  * @param {string|Date} date - Date to filter assignments
  * @param {Object} filters - Additional filters
  * @param {number} userId - User ID for logging
@@ -17,16 +18,17 @@ module.exports = async (date, filters = {}, userId) => {
       return {
         status: false,
         message: "Date parameter is required",
-        data: null
+        data: { errors: ["Missing date parameter"] }
       };
     }
 
     const assignmentRepo = AppDataSource.getRepository(Assignment);
-    
+    const currentSessionId = await farmSessionDefaultSessionId();
+
     // Parse date
     const targetDate = new Date(date);
     targetDate.setHours(0, 0, 0, 0);
-    
+
     const nextDay = new Date(targetDate);
     nextDay.setDate(nextDay.getDate() + 1);
 
@@ -34,9 +36,11 @@ module.exports = async (date, filters = {}, userId) => {
       .createQueryBuilder("assignment")
       .leftJoinAndSelect("assignment.worker", "worker")
       .leftJoinAndSelect("assignment.pitak", "pitak")
+      .leftJoinAndSelect("assignment.session", "session")
       .where("assignment.assignmentDate >= :startDate", { startDate: targetDate })
       .andWhere("assignment.assignmentDate < :endDate", { endDate: nextDay })
-      .orderBy("assignment.workerId", "ASC");
+      .andWhere("session.id = :sessionId", { sessionId: currentSessionId })
+      .orderBy("worker.id", "ASC");
 
     // Apply additional filters
     // @ts-ignore
@@ -48,11 +52,17 @@ module.exports = async (date, filters = {}, userId) => {
     // @ts-ignore
     if (filters.workerId) {
       // @ts-ignore
-      queryBuilder.andWhere("assignment.workerId = :workerId", { workerId: filters.workerId });
+      queryBuilder.andWhere("worker.id = :workerId", { workerId: filters.workerId });
+    }
+
+    // @ts-ignore
+    if (filters.pitakId) {
+      // @ts-ignore
+      queryBuilder.andWhere("pitak.id = :pitakId", { pitakId: filters.pitakId });
     }
 
     const assignments = await queryBuilder.getMany();
-    
+
     // Calculate summary for the day
     const summary = {
       totalAssignments: assignments.length,
@@ -64,17 +74,20 @@ module.exports = async (date, filters = {}, userId) => {
       uniquePitaks: new Set()
     };
 
-    const formattedAssignments = assignments.map((/** @type {{ luwangCount: string; workerId: any; pitakId: any; status: string; id: any; assignmentDate: any; notes: any; worker: { id: any; name: any; code: any; }; pitak: { id: any; name: any; code: any; }; }} */ assignment) => {
+    const formattedAssignments = assignments.map((assignment) => {
+      // @ts-ignore
       const luwang = parseFloat(assignment.luwangCount) || 0;
-      
+
       // Update summary
       summary.totalLuWang += luwang;
-      summary.uniqueWorkers.add(assignment.workerId);
-      summary.uniquePitaks.add(assignment.pitakId);
-      
-      if (assignment.status === 'active') summary.activeAssignments++;
-      if (assignment.status === 'completed') summary.completedAssignments++;
-      if (assignment.status === 'cancelled') summary.cancelledAssignments++;
+      // @ts-ignore
+      summary.uniqueWorkers.add(assignment.worker?.id);
+      // @ts-ignore
+      summary.uniquePitaks.add(assignment.pitak?.id);
+
+      if (assignment.status === "active") summary.activeAssignments++;
+      if (assignment.status === "completed") summary.completedAssignments++;
+      if (assignment.status === "cancelled") summary.cancelledAssignments++;
 
       return {
         id: assignment.id,
@@ -82,16 +95,16 @@ module.exports = async (date, filters = {}, userId) => {
         assignmentDate: assignment.assignmentDate,
         status: assignment.status,
         notes: assignment.notes,
-        worker: assignment.worker ? {
-          id: assignment.worker.id,
-          name: assignment.worker.name,
-          code: assignment.worker.code
-        } : null,
-        pitak: assignment.pitak ? {
-          id: assignment.pitak.id,
-          name: assignment.pitak.name,
-          code: assignment.pitak.code
-        } : null
+        // @ts-ignore
+        worker: assignment.worker
+          // @ts-ignore
+          ? { id: assignment.worker.id, name: assignment.worker.name }
+          : null,
+        // @ts-ignore
+        pitak: assignment.pitak
+          // @ts-ignore
+          ? { id: assignment.pitak.id, location: assignment.pitak.location }
+          : null
       };
     });
 
@@ -107,18 +120,18 @@ module.exports = async (date, filters = {}, userId) => {
       message: `Assignments for ${targetDate.toLocaleDateString()} retrieved successfully`,
       data: formattedAssignments,
       meta: {
-        date: targetDate.toISOString().split('T')[0],
+        date: targetDate.toISOString().split("T")[0],
+        sessionId: currentSessionId,
         summary
       }
     };
-
   } catch (error) {
     console.error("Error getting assignments by date:", error);
     return {
       status: false,
+      message: "Failed to retrieve assignments",
       // @ts-ignore
-      message: `Failed to retrieve assignments: ${error.message}`,
-      data: null
+      data: { errors: [error.message || String(error)] }
     };
   }
 };

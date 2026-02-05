@@ -3,13 +3,25 @@
 
 const Payment = require("../../../../entities/Payment");
 const { AppDataSource } = require("../../../db/dataSource");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
 module.exports = async function getPaymentStats(params = {}) {
   try {
     // @ts-ignore
-    const { year, month } = params;
+    const { year, month, currentSession = false } = params; // New parameter
 
     const paymentRepository = AppDataSource.getRepository(Payment);
+
+    // Helper to apply session filter to a query builder
+    // @ts-ignore
+    const applySessionFilter = async (qb) => {
+      if (currentSession) {
+        const currentSessionId = await farmSessionDefaultSessionId();
+        qb.leftJoin("payment.session", "session")
+          .andWhere("session.id = :currentSessionId", { currentSessionId });
+      }
+      return qb;
+    };
 
     // Build date filters
     let startDate = null;
@@ -48,6 +60,7 @@ module.exports = async function getPaymentStats(params = {}) {
       "COALESCE(MAX(payment.netPay), 0) as max_payment",
     ]);
     applyDateFilter(overallQB);
+    if (currentSession) await applySessionFilter(overallQB);
     const overallStats = (await overallQB.getRawOne()) || {};
 
     // Status distribution (fresh QB)
@@ -59,6 +72,7 @@ module.exports = async function getPaymentStats(params = {}) {
         "COALESCE(AVG(payment.netPay), 0) as average_amount",
       ]);
     applyDateFilter(statusQB);
+    if (currentSession) await applySessionFilter(statusQB);
     statusQB.groupBy("payment.status");
     const statusStats = await statusQB.getRawMany();
 
@@ -75,6 +89,7 @@ module.exports = async function getPaymentStats(params = {}) {
         .where("strftime('%Y', payment.createdAt) = :year", { year: String(year) });
       // If month filter was provided we already narrowed overall; but keep applyDateFilter for consistency
       applyDateFilter(monthlyQB);
+      if (currentSession) await applySessionFilter(monthlyQB);
       monthlyQB.groupBy("strftime('%m', payment.createdAt)").orderBy("month", "ASC");
       monthlyTrend = await monthlyQB.getRawMany();
     }
@@ -90,6 +105,7 @@ module.exports = async function getPaymentStats(params = {}) {
         "COALESCE(AVG(payment.netPay), 0) as average_payment",
       ]);
     applyDateFilter(topWorkersQB);
+    if (currentSession) await applySessionFilter(topWorkersQB);
     topWorkersQB.groupBy("worker.id, worker.name").orderBy("total_paid", "DESC").limit(10);
     const topWorkers = await topWorkersQB.getRawMany();
 
@@ -102,6 +118,7 @@ module.exports = async function getPaymentStats(params = {}) {
       ])
       .where("payment.paymentMethod IS NOT NULL");
     applyDateFilter(methodQB);
+    if (currentSession) await applySessionFilter(methodQB);
     methodQB.groupBy("payment.paymentMethod");
     const methodStats = await methodQB.getRawMany();
 
@@ -114,6 +131,7 @@ module.exports = async function getPaymentStats(params = {}) {
         "COALESCE(AVG(payment.totalDebtDeduction), 0) as average_debt_deduction",
       ]);
     applyDateFilter(deductionQB);
+    if (currentSession) await applySessionFilter(deductionQB);
     const deductionStats = (await deductionQB.getRawOne()) || {};
 
     // Completion rate (completed vs total) with date filter
@@ -123,6 +141,7 @@ module.exports = async function getPaymentStats(params = {}) {
         "COUNT(payment.id) as total_count",
       ]);
     applyDateFilter(completionQB);
+    if (currentSession) await applySessionFilter(completionQB);
     const completionRate = (await completionQB.getRawOne()) || { completed_count: 0, total_count: 0 };
 
     // Normalize and return
@@ -136,6 +155,7 @@ module.exports = async function getPaymentStats(params = {}) {
       message: "Payment statistics retrieved successfully",
       data: {
         period: year ? (month ? `${year}-${String(month).padStart(2, "0")}` : `${year}`) : "All time",
+        currentSessionFilter: currentSession,
         overall: {
           totalPayments: safeParseInt(overallStats.total_payments),
           totalGross: safeParseFloat(overallStats.total_gross),

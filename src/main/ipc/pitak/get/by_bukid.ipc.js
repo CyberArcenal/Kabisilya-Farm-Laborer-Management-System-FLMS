@@ -1,18 +1,14 @@
-// src/ipc/pitak/get/by_bukid.ipc
+// src/ipc/pitak/get/by_bukid.ipc.js
 //@ts-check
 
 const Pitak = require("../../../../entities/Pitak");
 const Bukid = require("../../../../entities/Bukid");
 const Assignment = require("../../../../entities/Assignment");
 const { AppDataSource } = require("../../../db/dataSource");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
 // @ts-ignore
-module.exports = async (
-  /** @type {any} */ bukidId,
-  filters = {},
-  // @ts-ignore
-  /** @type {any} */ userId,
-) => {
+module.exports = async (bukidId, filters = {}, userId) => {
   try {
     if (!bukidId) {
       return { status: false, message: "Bukid ID is required", data: null };
@@ -21,19 +17,31 @@ module.exports = async (
     const bukidRepo = AppDataSource.getRepository(Bukid);
     const pitakRepo = AppDataSource.getRepository(Pitak);
     const assignmentRepo = AppDataSource.getRepository(Assignment);
+    const currentSessionId = await farmSessionDefaultSessionId();
 
-    // Verify bukid exists
+    // Verify bukid exists in current session
     const bukid = await bukidRepo.findOne({
-      where: { id: bukidId },
+      where: {
+        id: bukidId,
+        // @ts-ignore
+        session: { id: currentSessionId },
+      },
     });
 
     if (!bukid) {
-      return { status: false, message: "Bukid not found", data: null };
+      return {
+        status: false,
+        message: "Bukid not found in current session",
+        data: null,
+      };
     }
 
     const query = pitakRepo
       .createQueryBuilder("pitak")
-      .where("pitak.bukidId = :bukidId", { bukidId });
+      .leftJoinAndSelect("pitak.bukid", "bukid")
+      .leftJoinAndSelect("bukid.session", "session")
+      .where("pitak.bukidId = :bukidId", { bukidId })
+      .andWhere("session.id = :sessionId", { sessionId: currentSessionId });
 
     // Apply filters
     // @ts-ignore
@@ -44,7 +52,6 @@ module.exports = async (
 
     // @ts-ignore
     if (filters.location) {
-      // @ts-ignore
       query.andWhere("pitak.location LIKE :location", {
         // @ts-ignore
         location: `%${filters.location}%`,
@@ -53,7 +60,6 @@ module.exports = async (
 
     // @ts-ignore
     if (filters.minLuWang) {
-      // @ts-ignore
       query.andWhere("pitak.totalLuwang >= :minLuWang", {
         // @ts-ignore
         minLuWang: filters.minLuWang,
@@ -62,7 +68,6 @@ module.exports = async (
 
     // @ts-ignore
     if (filters.maxLuWang) {
-      // @ts-ignore
       query.andWhere("pitak.totalLuwang <= :maxLuWang", {
         // @ts-ignore
         maxLuWang: filters.maxLuWang,
@@ -76,58 +81,53 @@ module.exports = async (
     const sortOrder = filters.sortOrder === "asc" ? "ASC" : "DESC";
     query.orderBy(`pitak.${sortField}`, sortOrder);
 
-    // Get all pitaks for this bukid (usually not too many, so no pagination)
+    // Get all pitaks for this bukid
     const pitaks = await query.getMany();
 
     // Get assignment statistics for each pitak
     const pitaksWithStats = await Promise.all(
-      pitaks.map(
-        // @ts-ignore
-        async (
-          /** @type {{ id: any; location: any; totalLuwang: string; status: any; createdAt: any; updatedAt: any; }} */ pitak,
-        ) => {
-          const assignmentStats = await assignmentRepo
-            .createQueryBuilder("assignment")
-            .select([
-              "COUNT(*) as totalAssignments",
-              "SUM(assignment.luwangCount) as totalLuWangAssigned",
-              'SUM(CASE WHEN assignment.status = "completed" THEN 1 ELSE 0 END) as completedAssignments',
-              'SUM(CASE WHEN assignment.status = "active" THEN 1 ELSE 0 END) as activeAssignments',
-            ])
-            .where("assignment.pitakId = :pitakId", { pitakId: pitak.id })
-            .getRawOne();
+      pitaks.map(async (pitak) => {
+        const assignmentStats = await assignmentRepo
+          .createQueryBuilder("assignment")
+          .select([
+            "COUNT(*) as totalAssignments",
+            "SUM(assignment.luwangCount) as totalLuWangAssigned",
+            'SUM(CASE WHEN assignment.status = "completed" THEN 1 ELSE 0 END) as completedAssignments',
+            'SUM(CASE WHEN assignment.status = "active" THEN 1 ELSE 0 END) as activeAssignments',
+          ])
+          .where("assignment.pitakId = :pitakId", { pitakId: pitak.id })
+          .getRawOne();
 
-          return {
-            id: pitak.id,
-            location: pitak.location,
-            totalLuwang: parseFloat(pitak.totalLuwang),
-            status: pitak.status,
-            assignmentStats: {
-              total: parseInt(assignmentStats.totalAssignments) || 0,
-              totalLuWangAssigned:
-                parseFloat(assignmentStats.totalLuWangAssigned) || 0,
-              completed: parseInt(assignmentStats.completedAssignments) || 0,
-              active: parseInt(assignmentStats.activeAssignments) || 0,
-            },
-            utilizationRate:
-              parseFloat(pitak.totalLuwang) > 0
-                ? (parseFloat(assignmentStats.totalLuWangAssigned || 0) /
-                    parseFloat(pitak.totalLuwang)) *
-                  100
-                : 0,
-            createdAt: pitak.createdAt,
-            updatedAt: pitak.updatedAt,
-          };
-        },
-      ),
+        return {
+          id: pitak.id,
+          location: pitak.location,
+          // @ts-ignore
+          totalLuwang: parseFloat(pitak.totalLuwang),
+          status: pitak.status,
+          assignmentStats: {
+            total: parseInt(assignmentStats.totalAssignments) || 0,
+            totalLuWangAssigned:
+              parseFloat(assignmentStats.totalLuWangAssigned) || 0,
+            completed: parseInt(assignmentStats.completedAssignments) || 0,
+            active: parseInt(assignmentStats.activeAssignments) || 0,
+          },
+          utilizationRate:
+            // @ts-ignore
+            parseFloat(pitak.totalLuwang) > 0
+              ? (parseFloat(assignmentStats.totalLuWangAssigned || 0) /
+                  // @ts-ignore
+                  parseFloat(pitak.totalLuwang)) *
+                100
+              : 0,
+          createdAt: pitak.createdAt,
+          updatedAt: pitak.updatedAt,
+        };
+      }),
     );
 
     // Calculate bukid-level statistics
     const bukidStats = pitaksWithStats.reduce(
-      (
-        /** @type {{ totalPitaks: number; totalLuWangCapacity: any; totalLuWangAssigned: any; totalAssignments: any; totalActiveAssignments: any; activePitaks: number; inactivePitaks: number; harvestedPitaks: number; }} */ stats,
-        /** @type {{ totalLuwang: any; assignmentStats: { totalLuWangAssigned: any; total: any; active: any; }; status: string; }} */ pitak,
-      ) => {
+      (stats, pitak) => {
         stats.totalPitaks++;
         stats.totalLuWangCapacity += pitak.totalLuwang;
         stats.totalLuWangAssigned += pitak.assignmentStats.totalLuWangAssigned;
@@ -175,6 +175,7 @@ module.exports = async (
       meta: {
         filters,
         retrievedAt: new Date(),
+        sessionId: currentSessionId,
       },
     };
   } catch (error) {

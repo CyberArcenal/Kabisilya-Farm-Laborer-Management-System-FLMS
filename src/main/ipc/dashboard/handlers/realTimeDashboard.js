@@ -1,86 +1,155 @@
 // dashboard/handlers/realTimeDashboard.js
 //@ts-check
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
+
 class RealTimeDashboard {
   /**
-     * @param {{ assignment: any; worker: any; debt: any; payment: any; pitak: any; }} repositories
-     * @param {any} params
-     */
-  // @ts-ignore
+   * Get live dashboard data
+   * @param {Object} repositories - Repository objects
+   * @param {Object} params - Query parameters
+   * @returns {Promise<Object>} Live dashboard data
+   */
   async getLiveDashboard(repositories, params) {
     const { 
+      // @ts-ignore
       assignment: assignmentRepo, 
+      // @ts-ignore
       worker: workerRepo, 
+      // @ts-ignore
       debt: debtRepo, 
+      // @ts-ignore
       payment: paymentRepo,
+      // @ts-ignore
       pitak: pitakRepo 
     } = repositories;
     
     try {
       const now = new Date();
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const yesterdayStart = new Date(todayStart);
-      yesterdayStart.setDate(yesterdayStart.getDate() - 1);
       
-      // Get today's assignments
-      const todayAssignments = await assignmentRepo.count({
+      // Check for current session filter
+      let sessionId = null;
+      // @ts-ignore
+      if (params.currentSession) {
+        sessionId = await farmSessionDefaultSessionId();
+      }
+      
+      // Get today's assignments with session filter
+      let todayAssignmentsQuery = assignmentRepo.count({
         where: {
           assignmentDate: { $gte: todayStart }
         }
       });
       
-      const todayCompleted = await assignmentRepo.count({
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        // @ts-ignore
+        todayAssignmentsQuery = assignmentRepo
+          .createQueryBuilder("assignment")
+          .where("assignment.assignmentDate >= :today", { today: todayStart })
+          .andWhere("assignment.session.id = :sessionId", { sessionId })
+          .getCount();
+      }
+      
+      const todayAssignments = await todayAssignmentsQuery;
+      
+      // Get today's completed assignments with session filter
+      let todayCompletedQuery = assignmentRepo.count({
         where: {
           assignmentDate: { $gte: todayStart },
           status: 'completed'
         }
       });
       
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        // @ts-ignore
+        todayCompletedQuery = assignmentRepo
+          .createQueryBuilder("assignment")
+          .where("assignment.assignmentDate >= :today", { today: todayStart })
+          .andWhere("assignment.status = :status", { status: 'completed' })
+          .andWhere("assignment.session.id = :sessionId", { sessionId })
+          .getCount();
+      }
+      
+      const todayCompleted = await todayCompletedQuery;
+      
       // Get active workers
       const activeWorkers = await workerRepo.count({
         where: { status: 'active' }
       });
       
-      // Get workers with assignments today
-      const workersWithAssignments = await assignmentRepo
+      // Get workers with assignments today with session filter
+      const workersWithAssignmentsQuery = assignmentRepo
         .createQueryBuilder("assignment")
         .select("COUNT(DISTINCT assignment.workerId)", "count")
-        .where("assignment.assignmentDate >= :today", { today: todayStart })
-        .getRawOne();
+        .where("assignment.assignmentDate >= :today", { today: todayStart });
       
-      // Get today's payments
-      const todayPayments = await paymentRepo
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        workersWithAssignmentsQuery.andWhere("assignment.session.id = :sessionId", { sessionId });
+      }
+      
+      const workersWithAssignments = await workersWithAssignmentsQuery.getRawOne();
+      
+      // Get today's payments with session filter
+      const todayPaymentsQuery = paymentRepo
         .createQueryBuilder("payment")
         .select([
           "SUM(payment.netPay) as totalNet",
           "COUNT(payment.id) as paymentCount"
         ])
         .where("payment.paymentDate >= :today", { today: todayStart })
-        .andWhere("payment.status = :status", { status: 'completed' })
-        .getRawOne();
+        .andWhere("payment.status = :status", { status: 'completed' });
       
-      // Get active debts
-      const activeDebts = await debtRepo.count({
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        todayPaymentsQuery.andWhere("payment.session.id = :sessionId", { sessionId });
+      }
+      
+      const todayPayments = await todayPaymentsQuery.getRawOne();
+      
+      // Get active debts with session filter
+      let activeDebtsQuery = debtRepo.count({
         where: { status: 'pending' }
       });
       
-      // Get total debt balance
-      const totalDebtBalance = await debtRepo
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        // @ts-ignore
+        activeDebtsQuery = debtRepo
+          .createQueryBuilder("debt")
+          .where("debt.status = :status", { status: 'pending' })
+          .andWhere("debt.session.id = :sessionId", { sessionId })
+          .getCount();
+      }
+      
+      const activeDebts = await activeDebtsQuery;
+      
+      // Get total debt balance with session filter
+      const totalDebtBalanceQuery = debtRepo
         .createQueryBuilder("debt")
         .select("SUM(debt.balance)", "total")
         .where("debt.status IN (:...statuses)", { 
           statuses: ['pending', 'partially_paid'] 
-        })
-        .getRawOne();
+        });
+      
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        totalDebtBalanceQuery.andWhere("debt.session.id = :sessionId", { sessionId });
+      }
+      
+      const totalDebtBalance = await totalDebtBalanceQuery.getRawOne();
       
       // Get active pitaks
       const activePitaks = await pitakRepo.count({
         where: { status: 'active' }
       });
       
-      // Get recent activities (last 2 hours)
+      // Get recent activities (last 2 hours) with session filter
       const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
       
-      const recentAssignments = await assignmentRepo.find({
+      let recentAssignmentsQuery = assignmentRepo.find({
         where: {
           createdAt: { $gte: twoHoursAgo }
         },
@@ -89,7 +158,23 @@ class RealTimeDashboard {
         take: 10
       });
       
-      const recentPayments = await paymentRepo.find({
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        // @ts-ignore
+        recentAssignmentsQuery = assignmentRepo
+          .createQueryBuilder("assignment")
+          .leftJoin("assignment.worker", "worker")
+          .leftJoin("assignment.pitak", "pitak")
+          .where("assignment.createdAt >= :recent", { recent: twoHoursAgo })
+          .andWhere("assignment.session.id = :sessionId", { sessionId })
+          .orderBy("assignment.createdAt", "DESC")
+          .take(10)
+          .getMany();
+      }
+      
+      const recentAssignments = await recentAssignmentsQuery;
+      
+      let recentPaymentsQuery = paymentRepo.find({
         where: {
           createdAt: { $gte: twoHoursAgo }
         },
@@ -97,6 +182,21 @@ class RealTimeDashboard {
         order: { createdAt: 'DESC' },
         take: 10
       });
+      
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        // @ts-ignore
+        recentPaymentsQuery = paymentRepo
+          .createQueryBuilder("payment")
+          .leftJoin("payment.worker", "worker")
+          .where("payment.createdAt >= :recent", { recent: twoHoursAgo })
+          .andWhere("payment.session.id = :sessionId", { sessionId })
+          .orderBy("payment.createdAt", "DESC")
+          .take(10)
+          .getMany();
+      }
+      
+      const recentPayments = await recentPaymentsQuery;
       
       // Calculate assignment completion rate for today
       const todayCompletionRate = todayAssignments > 0 
@@ -110,7 +210,8 @@ class RealTimeDashboard {
       
       // Format recent activities
       const recentActivities = [
-        ...recentAssignments.map((/** @type {{ id: any; worker: { name: any; }; pitak: { location: any; }; luwangCount: string; status: any; createdAt: any; }} */ assignment) => ({
+        // @ts-ignore
+        ...recentAssignments.map((assignment) => ({
           type: 'assignment',
           id: assignment.id,
           workerName: assignment.worker?.name || 'Unknown',
@@ -120,7 +221,8 @@ class RealTimeDashboard {
           timestamp: assignment.createdAt,
           action: `Assignment ${assignment.status}`
         })),
-        ...recentPayments.map((/** @type {{ id: any; worker: { name: any; }; netPay: string; status: any; createdAt: any; }} */ payment) => ({
+        // @ts-ignore
+        ...recentPayments.map((payment) => ({
           type: 'payment',
           id: payment.id,
           workerName: payment.worker?.name || 'Unknown',
@@ -132,8 +234,29 @@ class RealTimeDashboard {
       ].sort((a, b) => b.timestamp - a.timestamp)
        .slice(0, 15);
       
-      // Get system alerts
-      const alerts = await this.getSystemAlerts(repositories);
+      // Get system alerts with session filter
+      const alerts = await this.getSystemAlerts(repositories, {
+        // @ts-ignore
+        currentSession: params.currentSession,
+        sessionId
+      });
+      
+      // Calculate quick stats
+      const averageAssignmentTime = await this.calculateAverageAssignmentTime(assignmentRepo, {
+        // @ts-ignore
+        currentSession: params.currentSession,
+        sessionId
+      });
+      
+      const averagePaymentAmount = parseInt(todayPayments?.paymentCount) > 0 
+        ? parseFloat(todayPayments?.totalNet) / parseInt(todayPayments?.paymentCount) 
+        : 0;
+      
+      const debtCollectionRate = await this.calculateDebtCollectionRate(debtRepo, {
+        // @ts-ignore
+        currentSession: params.currentSession,
+        sessionId
+      });
       
       return {
         status: true,
@@ -165,11 +288,13 @@ class RealTimeDashboard {
           recentActivities: recentActivities,
           alerts: alerts,
           quickStats: {
-            averageAssignmentTime: await this.calculateAverageAssignmentTime(assignmentRepo),
-            averagePaymentAmount: parseInt(todayPayments?.paymentCount) > 0 
-              ? parseFloat(todayPayments?.totalNet) / parseInt(todayPayments?.paymentCount) 
-              : 0,
-            debtCollectionRate: await this.calculateDebtCollectionRate(debtRepo)
+            averageAssignmentTime: averageAssignmentTime,
+            averagePaymentAmount: averagePaymentAmount,
+            debtCollectionRate: debtCollectionRate
+          },
+          filters: {
+            // @ts-ignore
+            currentSession: params.currentSession || false
           }
         }
       };
@@ -180,14 +305,18 @@ class RealTimeDashboard {
   }
   
   /**
-     * @param {{ assignment: any; payment: any; debtHistory: any; worker: any; }} repositories
-     * @param {any} params
-     */
-  // @ts-ignore
+   * Get today's statistics
+   * @param {Object} repositories - Repository objects
+   * @param {Object} params - Query parameters
+   * @returns {Promise<Object>} Today's statistics
+   */
   async getTodayStats(repositories, params) {
     const { 
+      // @ts-ignore
       assignment: assignmentRepo, 
+      // @ts-ignore
       payment: paymentRepo,
+      // @ts-ignore
       debtHistory: debtHistoryRepo,
       // @ts-ignore
       worker: workerRepo
@@ -199,12 +328,19 @@ class RealTimeDashboard {
       const yesterdayStart = new Date(todayStart);
       yesterdayStart.setDate(yesterdayStart.getDate() - 1);
       
-      // Get assignments comparison
-      const todayAssignments = await assignmentRepo.count({
+      // Check for current session filter
+      let sessionId = null;
+      // @ts-ignore
+      if (params.currentSession) {
+        sessionId = await farmSessionDefaultSessionId();
+      }
+      
+      // Get assignments comparison with session filter
+      let todayAssignmentsQuery = assignmentRepo.count({
         where: { assignmentDate: { $gte: todayStart } }
       });
       
-      const yesterdayAssignments = await assignmentRepo.count({
+      let yesterdayAssignmentsQuery = assignmentRepo.count({
         where: { 
           assignmentDate: { 
             $gte: yesterdayStart,
@@ -213,27 +349,57 @@ class RealTimeDashboard {
         }
       });
       
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        // @ts-ignore
+        todayAssignmentsQuery = assignmentRepo
+          .createQueryBuilder("assignment")
+          .where("assignment.assignmentDate >= :today", { today: todayStart })
+          .andWhere("assignment.session.id = :sessionId", { sessionId })
+          .getCount();
+        
+        // @ts-ignore
+        yesterdayAssignmentsQuery = assignmentRepo
+          .createQueryBuilder("assignment")
+          .where("assignment.assignmentDate >= :yesterday AND assignment.assignmentDate < :today", {
+            yesterday: yesterdayStart,
+            today: todayStart
+          })
+          .andWhere("assignment.session.id = :sessionId", { sessionId })
+          .getCount();
+      }
+      
+      const todayAssignments = await todayAssignmentsQuery;
+      const yesterdayAssignments = await yesterdayAssignmentsQuery;
+      
       const assignmentChange = yesterdayAssignments > 0 
         ? ((todayAssignments - yesterdayAssignments) / yesterdayAssignments) * 100 
         : (todayAssignments > 0 ? 100 : 0);
       
-      // Get payments comparison
-      const todayPayments = await paymentRepo
+      // Get payments comparison with session filter
+      const todayPaymentsQuery = paymentRepo
         .createQueryBuilder("payment")
         .select("SUM(payment.netPay)", "total")
         .where("payment.paymentDate >= :today", { today: todayStart })
-        .andWhere("payment.status = :status", { status: 'completed' })
-        .getRawOne();
+        .andWhere("payment.status = :status", { status: 'completed' });
       
-      const yesterdayPayments = await paymentRepo
+      const yesterdayPaymentsQuery = paymentRepo
         .createQueryBuilder("payment")
         .select("SUM(payment.netPay)", "total")
         .where("payment.paymentDate BETWEEN :start AND :end", {
           start: yesterdayStart,
           end: todayStart
         })
-        .andWhere("payment.status = :status", { status: 'completed' })
-        .getRawOne();
+        .andWhere("payment.status = :status", { status: 'completed' });
+      
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        todayPaymentsQuery.andWhere("payment.session.id = :sessionId", { sessionId });
+        yesterdayPaymentsQuery.andWhere("payment.session.id = :sessionId", { sessionId });
+      }
+      
+      const todayPayments = await todayPaymentsQuery.getRawOne();
+      const yesterdayPayments = await yesterdayPaymentsQuery.getRawOne();
       
       const todayPaymentTotal = parseFloat(todayPayments?.total) || 0;
       const yesterdayPaymentTotal = parseFloat(yesterdayPayments?.total) || 0;
@@ -242,47 +408,85 @@ class RealTimeDashboard {
         ? ((todayPaymentTotal - yesterdayPaymentTotal) / yesterdayPaymentTotal) * 100 
         : (todayPaymentTotal > 0 ? 100 : 0);
       
-      // Get debt collections today
-      const todayCollections = await debtHistoryRepo
+      // Get debt collections today with session filter
+      const todayCollectionsQuery = debtHistoryRepo
         .createQueryBuilder("history")
+        .leftJoin("history.debt", "debt")
         .select("SUM(history.amountPaid)", "total")
         .where("history.transactionDate >= :today", { today: todayStart })
-        .andWhere("history.transactionType = :type", { type: 'payment' })
-        .getRawOne();
+        .andWhere("history.transactionType = :type", { type: 'payment' });
       
-      // Get active workers today
-      const workersWithActivity = await assignmentRepo
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        todayCollectionsQuery.andWhere("debt.session.id = :sessionId", { sessionId });
+      }
+      
+      const todayCollections = await todayCollectionsQuery.getRawOne();
+      
+      // Get active workers today with session filter
+      const workersWithActivityQuery = assignmentRepo
         .createQueryBuilder("assignment")
         .select("COUNT(DISTINCT assignment.workerId)", "count")
-        .where("assignment.assignmentDate >= :today", { today: todayStart })
-        .getRawOne();
+        .where("assignment.assignmentDate >= :today", { today: todayStart });
       
-      // Get completed assignments today
-      const completedToday = await assignmentRepo.count({
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        workersWithActivityQuery.andWhere("assignment.session.id = :sessionId", { sessionId });
+      }
+      
+      const workersWithActivity = await workersWithActivityQuery.getRawOne();
+      
+      // Get completed assignments today with session filter
+      let completedTodayQuery = assignmentRepo.count({
         where: {
           assignmentDate: { $gte: todayStart },
           status: 'completed'
         }
       });
       
-      // Get assignment status breakdown for today
-      const statusBreakdown = await assignmentRepo
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        // @ts-ignore
+        completedTodayQuery = assignmentRepo
+          .createQueryBuilder("assignment")
+          .where("assignment.assignmentDate >= :today", { today: todayStart })
+          .andWhere("assignment.status = :status", { status: 'completed' })
+          .andWhere("assignment.session.id = :sessionId", { sessionId })
+          .getCount();
+      }
+      
+      const completedToday = await completedTodayQuery;
+      
+      // Get assignment status breakdown for today with session filter
+      const statusBreakdownQuery = assignmentRepo
         .createQueryBuilder("assignment")
         .select([
           "assignment.status",
           "COUNT(assignment.id) as count"
         ])
-        .where("assignment.assignmentDate >= :today", { today: todayStart })
+        .where("assignment.assignmentDate >= :today", { today: todayStart });
+      
+      // @ts-ignore
+      if (params.currentSession && sessionId) {
+        statusBreakdownQuery.andWhere("assignment.session.id = :sessionId", { sessionId });
+      }
+      
+      const statusBreakdown = await statusBreakdownQuery
         .groupBy("assignment.status")
         .getRawMany();
       
-      const statusSummary = statusBreakdown.reduce((/** @type {{ [x: string]: number; }} */ acc, /** @type {{ assignment_status: string | number; count: string; }} */ item) => {
+      // @ts-ignore
+      const statusSummary = statusBreakdown.reduce((acc, item) => {
         acc[item.assignment_status] = parseInt(item.count);
         return acc;
       }, { active: 0, completed: 0, cancelled: 0 });
       
       // Calculate hourly distribution for today
-      const hourlyData = await this.getHourlyDistribution(assignmentRepo, paymentRepo, todayStart);
+      const hourlyData = await this.getHourlyDistribution(assignmentRepo, paymentRepo, todayStart, {
+        // @ts-ignore
+        currentSession: params.currentSession,
+        sessionId
+      });
       
       return {
         status: true,
@@ -326,7 +530,11 @@ class RealTimeDashboard {
             todayAssignments, 
             completedToday, 
             todayPaymentTotal
-          )
+          ),
+          filters: {
+            // @ts-ignore
+            currentSession: params.currentSession || false
+          }
         }
       };
     } catch (error) {
@@ -336,14 +544,24 @@ class RealTimeDashboard {
   }
   
   /**
-     * @param {{ assignment: any; }} repositories
-     * @param {{ status: any; limit?: 20 | undefined; }} params
-     */
+   * Get real-time assignments
+   * @param {Object} repositories - Repository objects
+   * @param {Object} params - Query parameters
+   * @returns {Promise<Object>} Real-time assignments data
+   */
   async getRealTimeAssignments(repositories, params) {
+    // @ts-ignore
     const { assignment: assignmentRepo } = repositories;
-    const { status, limit = 20 } = params;
+    // @ts-ignore
+    const { status, limit = 20, currentSession = false } = params;
     
     try {
+      // Get current session ID if requested
+      let sessionId = null;
+      if (currentSession) {
+        sessionId = await farmSessionDefaultSessionId();
+      }
+      
       // Get active assignments (last 24 hours)
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       
@@ -364,8 +582,11 @@ class RealTimeDashboard {
           "pitak.location as pitakLocation",
           "bukid.name as bukidName"
         ])
-        .where("assignment.updatedAt >= :recent", { recent: twentyFourHoursAgo })
-        .orderBy("assignment.updatedAt", "DESC");
+        .where("assignment.updatedAt >= :recent", { recent: twentyFourHoursAgo });
+      
+      if (currentSession && sessionId) {
+        query.andWhere("assignment.session.id = :sessionId", { sessionId });
+      }
       
       if (status) {
         query.andWhere("assignment.status = :status", { status });
@@ -375,10 +596,13 @@ class RealTimeDashboard {
         query.limit(limit);
       }
       
+      query.orderBy("assignment.updatedAt", "DESC");
+      
       const assignments = await query.getRawMany();
       
       // Calculate time metrics
-      const assignmentsWithMetrics = assignments.map((/** @type {{ assignment_createdAt: string | number | Date; assignment_updatedAt: string | number | Date; assignment_status: string; assignment_id: any; workerName: any; workerId: any; pitakLocation: any; bukidName: any; assignment_luwangCount: string; assignment_assignmentDate: any; }} */ assignment) => {
+      // @ts-ignore
+      const assignmentsWithMetrics = assignments.map((assignment) => {
         const createdAt = new Date(assignment.assignment_createdAt);
         const updatedAt = new Date(assignment.assignment_updatedAt);
         const now = new Date();
@@ -417,7 +641,8 @@ class RealTimeDashboard {
       });
       
       // Group by status
-      const byStatus = assignments.reduce((/** @type {{ [x: string]: number; }} */ acc, /** @type {{ assignment_status: any; }} */ assignment) => {
+      // @ts-ignore
+      const byStatus = assignments.reduce((acc, assignment) => {
         const status = assignment.assignment_status;
         if (!acc[status]) {
           acc[status] = 0;
@@ -427,13 +652,12 @@ class RealTimeDashboard {
       }, {});
       
       // Group by worker
-      const byWorker = assignments.reduce((/** @type {{ [x: string]: { totalLuwang: number; }; }} */ acc, /** @type {{ workerName: any; assignment_luwangCount: string; }} */ assignment) => {
+      // @ts-ignore
+      const byWorker = assignments.reduce((acc, assignment) => {
         const workerName = assignment.workerName;
         if (!acc[workerName]) {
-          // @ts-ignore
           acc[workerName] = { count: 0, totalLuwang: 0 };
         }
-        // @ts-ignore
         acc[workerName].count++;
         acc[workerName].totalLuwang += parseFloat(assignment.assignment_luwangCount);
         return acc;
@@ -441,10 +665,13 @@ class RealTimeDashboard {
       
       // Calculate statistics
       const totalAssignments = assignments.length;
-      const activeAssignments = assignments.filter((/** @type {{ assignment_status: string; }} */ a) => a.assignment_status === 'active').length;
-      const completedAssignments = assignments.filter((/** @type {{ assignment_status: string; }} */ a) => a.assignment_status === 'completed').length;
+      // @ts-ignore
+      const activeAssignments = assignments.filter(a => a.assignment_status === 'active').length;
+      // @ts-ignore
+      const completedAssignments = assignments.filter(a => a.assignment_status === 'completed').length;
       
-      const totalLuwang = assignments.reduce((/** @type {number} */ sum, /** @type {{ assignment_luwangCount: string; }} */ a) => 
+      // @ts-ignore
+      const totalLuwang = assignments.reduce((sum, a) => 
         sum + parseFloat(a.assignment_luwangCount), 0);
       
       const averageLuwang = totalAssignments > 0 ? totalLuwang / totalAssignments : 0;
@@ -487,7 +714,8 @@ class RealTimeDashboard {
           topWorkers: topWorkers,
           filters: {
             status: status,
-            limit: limit
+            limit: limit,
+            currentSession: currentSession
           },
           lastUpdated: new Date().toISOString()
         }
@@ -499,34 +727,73 @@ class RealTimeDashboard {
   }
   
   /**
-     * @param {{ payment: any; debtHistory: any; }} repositories
-     * @param {{ limit?: 20 | undefined; includeDebtPayments?: true | undefined; }} params
-     */
+   * Get recent payments
+   * @param {Object} repositories - Repository objects
+   * @param {Object} params - Query parameters
+   * @returns {Promise<Object>} Recent payments data
+   */
   async getRecentPayments(repositories, params) {
+    // @ts-ignore
     const { payment: paymentRepo, debtHistory: debtHistoryRepo } = repositories;
-    const { limit = 20, includeDebtPayments = true } = params;
+    // @ts-ignore
+    const { limit = 20, includeDebtPayments = true, currentSession = false } = params;
     
     try {
-      // Get recent payments
-      const payments = await paymentRepo.find({
+      // Get current session ID if requested
+      let sessionId = null;
+      if (currentSession) {
+        sessionId = await farmSessionDefaultSessionId();
+      }
+      
+      // Get recent payments with session filter
+      let paymentsQuery = paymentRepo.find({
         relations: ['worker'],
         order: { paymentDate: 'DESC' },
         take: limit
       });
       
+      if (currentSession && sessionId) {
+        // @ts-ignore
+        paymentsQuery = paymentRepo
+          .createQueryBuilder("payment")
+          .leftJoin("payment.worker", "worker")
+          .where("payment.session.id = :sessionId", { sessionId })
+          .orderBy("payment.paymentDate", "DESC")
+          .take(limit)
+          .getMany();
+      }
+      
+      const payments = await paymentsQuery;
+      
       // Get recent debt payments if requested
       let debtPayments = [];
       if (includeDebtPayments) {
-        debtPayments = await debtHistoryRepo.find({
+        let debtPaymentsQuery = debtHistoryRepo.find({
           where: { transactionType: 'payment' },
           relations: ['debt', 'debt.worker'],
           order: { transactionDate: 'DESC' },
           take: limit
         });
+        
+        if (currentSession && sessionId) {
+          // @ts-ignore
+          debtPaymentsQuery = debtHistoryRepo
+            .createQueryBuilder("history")
+            .leftJoin("history.debt", "debt")
+            .leftJoin("debt.worker", "worker")
+            .where("history.transactionType = :type", { type: 'payment' })
+            .andWhere("debt.session.id = :sessionId", { sessionId })
+            .orderBy("history.transactionDate", "DESC")
+            .take(limit)
+            .getMany();
+        }
+        
+        debtPayments = await debtPaymentsQuery;
       }
       
       // Format payment data
-      const formattedPayments = payments.map((/** @type {{ id: any; worker: { name: any; id: any; }; netPay: string; grossPay: string; totalDebtDeduction: string; otherDeductions: any; status: any; paymentDate: any; paymentMethod: any; referenceNumber: any; }} */ payment) => ({
+      // @ts-ignore
+      const formattedPayments = payments.map((payment) => ({
         type: 'salary',
         id: payment.id,
         workerName: payment.worker?.name || 'Unknown',
@@ -541,7 +808,8 @@ class RealTimeDashboard {
       }));
       
       // Format debt payment data
-      const formattedDebtPayments = debtPayments.map((/** @type {{ id: any; debt: { worker: { name: any; id: any; }; id: any; }; amountPaid: string; previousBalance: string; newBalance: string; paymentMethod: any; referenceNumber: any; transactionDate: any; }} */ payment) => ({
+      // @ts-ignore
+      const formattedDebtPayments = debtPayments.map((payment) => ({
         type: 'debt',
         id: payment.id,
         workerName: payment.debt?.worker?.name || 'Unknown',
@@ -569,8 +837,10 @@ class RealTimeDashboard {
       const totalSalaryPayments = formattedPayments.length;
       const totalDebtPayments = formattedDebtPayments.length;
       
-      const totalSalaryAmount = formattedPayments.reduce((/** @type {any} */ sum, /** @type {{ amount: any; }} */ p) => sum + p.amount, 0);
-      const totalDebtAmount = formattedDebtPayments.reduce((/** @type {any} */ sum, /** @type {{ amount: any; }} */ p) => sum + p.amount, 0);
+      // @ts-ignore
+      const totalSalaryAmount = formattedPayments.reduce((sum, p) => sum + p.amount, 0);
+      // @ts-ignore
+      const totalDebtAmount = formattedDebtPayments.reduce((sum, p) => sum + p.amount, 0);
       const totalAmount = totalSalaryAmount + totalDebtAmount;
       
       // Group by payment method
@@ -652,7 +922,8 @@ class RealTimeDashboard {
           topPayees: topPayees,
           filters: {
             limit: limit,
-            includeDebtPayments: includeDebtPayments
+            includeDebtPayments: includeDebtPayments,
+            currentSession: currentSession
           },
           lastUpdated: new Date().toISOString()
         }
@@ -664,14 +935,24 @@ class RealTimeDashboard {
   }
   
   /**
-     * @param {{ debt: any; }} repositories
-     * @param {{ status?: "pending" | undefined; limit?: 20 | undefined; overdueOnly?: false | undefined; }} params
-     */
+   * Get pending debts
+   * @param {Object} repositories - Repository objects
+   * @param {Object} params - Query parameters
+   * @returns {Promise<Object>} Pending debts data
+   */
   async getPendingDebts(repositories, params) {
+    // @ts-ignore
     const { debt: debtRepo } = repositories;
-    const { status = 'pending', limit = 20, overdueOnly = false } = params;
+    // @ts-ignore
+    const { status = 'pending', limit = 20, overdueOnly = false, currentSession = false } = params;
     
     try {
+      // Get current session ID if requested
+      let sessionId = null;
+      if (currentSession) {
+        sessionId = await farmSessionDefaultSessionId();
+      }
+      
       // Build query for pending debts
       let query = debtRepo
         .createQueryBuilder("debt")
@@ -703,6 +984,10 @@ class RealTimeDashboard {
           .andWhere("debt.dueDate < :today", { today: new Date() });
       }
       
+      if (currentSession && sessionId) {
+        query.andWhere("debt.session.id = :sessionId", { sessionId });
+      }
+      
       if (limit) {
         query.limit(limit);
       }
@@ -710,7 +995,8 @@ class RealTimeDashboard {
       const debts = await query.getRawMany();
       
       // Calculate additional metrics
-      const debtsWithMetrics = debts.map((/** @type {{ debt_dueDate: string | number | Date; debt_amount: string; debt_balance: string; debt_totalPaid: string; debt_id: any; workerName: any; workerId: any; workerContact: any; debt_originalAmount: string; debt_status: any; debt_dateIncurred: string | number | Date; debt_interestRate: string; debt_lastPaymentDate: any; }} */ debt) => {
+      // @ts-ignore
+      const debtsWithMetrics = debts.map((debt) => {
         const dueDate = debt.debt_dueDate ? new Date(debt.debt_dueDate) : null;
         const today = new Date();
         let overdueDays = 0;
@@ -765,7 +1051,8 @@ class RealTimeDashboard {
       });
       
       // Sort by urgency (critical first)
-      debtsWithMetrics.sort((/** @type {{ urgency: string | number; }} */ a, /** @type {{ urgency: string | number; }} */ b) => {
+      // @ts-ignore
+      debtsWithMetrics.sort((a, b) => {
         const urgencyOrder = { critical: 0, high: 1, medium: 2, low: 3 };
         // @ts-ignore
         return urgencyOrder[a.urgency] - urgencyOrder[b.urgency];
@@ -773,29 +1060,33 @@ class RealTimeDashboard {
       
       // Calculate summary statistics
       const totalDebts = debtsWithMetrics.length;
-      const totalAmount = debtsWithMetrics.reduce((/** @type {any} */ sum, /** @type {{ amount: any; }} */ debt) => sum + debt.amount, 0);
-      const totalBalance = debtsWithMetrics.reduce((/** @type {any} */ sum, /** @type {{ balance: any; }} */ debt) => sum + debt.balance, 0);
-      const totalPaid = debtsWithMetrics.reduce((/** @type {any} */ sum, /** @type {{ paid: any; }} */ debt) => sum + debt.paid, 0);
+      // @ts-ignore
+      const totalAmount = debtsWithMetrics.reduce((sum, debt) => sum + debt.amount, 0);
+      // @ts-ignore
+      const totalBalance = debtsWithMetrics.reduce((sum, debt) => sum + debt.balance, 0);
+      // @ts-ignore
+      const totalPaid = debtsWithMetrics.reduce((sum, debt) => sum + debt.paid, 0);
       
-      const overdueDebts = debtsWithMetrics.filter((/** @type {{ overdue: { isOverdue: any; }; }} */ d) => d.overdue.isOverdue);
-      const totalOverdueAmount = overdueDebts.reduce((/** @type {any} */ sum, /** @type {{ balance: any; }} */ debt) => sum + debt.balance, 0);
+      // @ts-ignore
+      const overdueDebts = debtsWithMetrics.filter(d => d.overdue.isOverdue);
+      // @ts-ignore
+      const totalOverdueAmount = overdueDebts.reduce((sum, debt) => sum + debt.balance, 0);
       
       const averageDebt = totalDebts > 0 ? totalAmount / totalDebts : 0;
       const averageBalance = totalDebts > 0 ? totalBalance / totalDebts : 0;
       const averageAge = totalDebts > 0 
-        ? debtsWithMetrics.reduce((/** @type {any} */ sum, /** @type {{ ageInDays: any; }} */ debt) => sum + debt.ageInDays, 0) / totalDebts 
+        // @ts-ignore
+        ? debtsWithMetrics.reduce((sum, debt) => sum + debt.ageInDays, 0) / totalDebts 
         : 0;
       
       // Group by worker
-      const byWorker = debtsWithMetrics.reduce((/** @type {{ [x: string]: { debts: any[]; }; }} */ acc, /** @type {{ workerName: any; balance: any; id: any; }} */ debt) => {
+      // @ts-ignore
+      const byWorker = debtsWithMetrics.reduce((acc, debt) => {
         const workerName = debt.workerName;
         if (!acc[workerName]) {
-          // @ts-ignore
           acc[workerName] = { count: 0, totalBalance: 0, debts: [] };
         }
-        // @ts-ignore
         acc[workerName].count++;
-        // @ts-ignore
         acc[workerName].totalBalance += debt.balance;
         acc[workerName].debts.push(debt.id);
         return acc;
@@ -812,7 +1103,8 @@ class RealTimeDashboard {
         .slice(0, 5);
       
       // Group by urgency
-      const byUrgency = debtsWithMetrics.reduce((/** @type {{ [x: string]: number; }} */ acc, /** @type {{ urgency: string | number; }} */ debt) => {
+      // @ts-ignore
+      const byUrgency = debtsWithMetrics.reduce((acc, debt) => {
         if (!acc[debt.urgency]) {
           acc[debt.urgency] = 0;
         }
@@ -853,7 +1145,8 @@ class RealTimeDashboard {
           filters: {
             status: status,
             overdueOnly: overdueOnly,
-            limit: limit
+            limit: limit,
+            currentSession: currentSession
           },
           recommendations: overdueDebts.length > 0 ? [
             "Follow up on overdue debts immediately",
@@ -874,21 +1167,34 @@ class RealTimeDashboard {
   }
   
   // Helper methods
-  /**
-     * @param {{ debt: any; assignment: any; }} repositories
-     */
-  async getSystemAlerts(repositories) {
+
+  // @ts-ignore
+  async getSystemAlerts(repositories, params) {
     const { debt: debtRepo, assignment: assignmentRepo } = repositories;
+    const { currentSession = false, sessionId = null } = params;
+    
     const alerts = [];
     
     try {
-      // Check for overdue debts
-      const overdueDebts = await debtRepo.count({
+      // Check for overdue debts with session filter
+      let overdueDebtsQuery = debtRepo.count({
         where: {
           dueDate: { $lt: new Date() },
           status: { $in: ['pending', 'partially_paid'] }
         }
       });
+      
+      if (currentSession && sessionId) {
+        // @ts-ignore
+        overdueDebtsQuery = debtRepo
+          .createQueryBuilder("debt")
+          .where("debt.dueDate < :today", { today: new Date() })
+          .andWhere("debt.status IN (:...statuses)", { statuses: ['pending', 'partially_paid'] })
+          .andWhere("debt.session.id = :sessionId", { sessionId })
+          .getCount();
+      }
+      
+      const overdueDebts = await overdueDebtsQuery;
       
       if (overdueDebts > 0) {
         alerts.push({
@@ -900,14 +1206,27 @@ class RealTimeDashboard {
         });
       }
       
-      // Check for assignments without updates in 3 days
+      // Check for assignments without updates in 3 days with session filter
       const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
-      const staleAssignments = await assignmentRepo.count({
+      
+      let staleAssignmentsQuery = assignmentRepo.count({
         where: {
           status: 'active',
           updatedAt: { $lt: threeDaysAgo }
         }
       });
+      
+      if (currentSession && sessionId) {
+        // @ts-ignore
+        staleAssignmentsQuery = assignmentRepo
+          .createQueryBuilder("assignment")
+          .where("assignment.status = :status", { status: 'active' })
+          .andWhere("assignment.updatedAt < :threeDaysAgo", { threeDaysAgo })
+          .andWhere("assignment.session.id = :sessionId", { sessionId })
+          .getCount();
+      }
+      
+      const staleAssignments = await staleAssignmentsQuery;
       
       if (staleAssignments > 0) {
         alerts.push({
@@ -919,8 +1238,8 @@ class RealTimeDashboard {
         });
       }
       
-      // Check for high debt workers
-      const highDebtWorkers = await debtRepo
+      // Check for high debt workers with session filter
+      const highDebtWorkersQuery = debtRepo
         .createQueryBuilder("debt")
         .leftJoin("debt.worker", "worker")
         .select([
@@ -929,7 +1248,13 @@ class RealTimeDashboard {
         ])
         .where("debt.status IN (:...statuses)", { 
           statuses: ['pending', 'partially_paid'] 
-        })
+        });
+      
+      if (currentSession && sessionId) {
+        highDebtWorkersQuery.andWhere("debt.session.id = :sessionId", { sessionId });
+      }
+      
+      const highDebtWorkers = await highDebtWorkersQuery
         .groupBy("worker.name")
         .having("SUM(debt.balance) > 10000") // Threshold for high debt
         .getRawMany();
@@ -940,7 +1265,8 @@ class RealTimeDashboard {
           title: 'High Debt Workers',
           message: `${highDebtWorkers.length} workers have debt over 10,000`,
           priority: 'medium',
-          details: highDebtWorkers.map((/** @type {{ worker_name: any; }} */ w) => w.worker_name),
+          // @ts-ignore
+          details: highDebtWorkers.map(w => w.worker_name),
           timestamp: new Date()
         });
       }
@@ -953,18 +1279,39 @@ class RealTimeDashboard {
   }
   
   /**
-     * @param {{ find: (arg0: { where: { status: string; }; select: string[]; }) => any; }} assignmentRepo
-     */
-  async calculateAverageAssignmentTime(assignmentRepo) {
+   * Calculate average assignment time
+   * @param {Object} assignmentRepo - Assignment repository
+   * @param {Object} params - Query parameters
+   * @returns {Promise<number>} Average assignment time in hours
+   */
+  async calculateAverageAssignmentTime(assignmentRepo, params) {
+    // @ts-ignore
+    const { currentSession = false, sessionId = null } = params;
+    
     try {
-      const completedAssignments = await assignmentRepo.find({
+      // @ts-ignore
+      let completedAssignmentsQuery = assignmentRepo.find({
         where: { status: 'completed' },
         select: ['createdAt', 'updatedAt']
       });
       
+      if (currentSession && sessionId) {
+        // @ts-ignore
+        completedAssignmentsQuery = assignmentRepo
+          // @ts-ignore
+          .createQueryBuilder("assignment")
+          .select(["assignment.createdAt", "assignment.updatedAt"])
+          .where("assignment.status = :status", { status: 'completed' })
+          .andWhere("assignment.session.id = :sessionId", { sessionId })
+          .getMany();
+      }
+      
+      const completedAssignments = await completedAssignmentsQuery;
+      
       if (completedAssignments.length === 0) return 0;
       
-      const totalTime = completedAssignments.reduce((/** @type {number} */ sum, /** @type {{ createdAt: string | number | Date; updatedAt: string | number | Date; }} */ assignment) => {
+      // @ts-ignore
+      const totalTime = completedAssignments.reduce((sum, assignment) => {
         const start = new Date(assignment.createdAt);
         const end = new Date(assignment.updatedAt);
         // @ts-ignore
@@ -978,17 +1325,29 @@ class RealTimeDashboard {
   }
   
   /**
-     * @param {{ createQueryBuilder: (arg0: string) => { (): any; new (): any; select: { (arg0: string[]): { (): any; new (): any; getRawOne: { (): any; new (): any; }; }; new (): any; }; }; }} debtRepo
-     */
-  async calculateDebtCollectionRate(debtRepo) {
+   * Calculate debt collection rate
+   * @param {Object} debtRepo - Debt repository
+   * @param {Object} params - Query parameters
+   * @returns {Promise<number>} Debt collection rate percentage
+   */
+  async calculateDebtCollectionRate(debtRepo, params) {
+    // @ts-ignore
+    const { currentSession = false, sessionId = null } = params;
+    
     try {
-      const debtStats = await debtRepo
+      const debtStatsQuery = debtRepo
+        // @ts-ignore
         .createQueryBuilder("debt")
         .select([
           "SUM(debt.amount) as totalAmount",
           "SUM(debt.totalPaid) as totalPaid"
-        ])
-        .getRawOne();
+        ]);
+      
+      if (currentSession && sessionId) {
+        debtStatsQuery.where("debt.session.id = :sessionId", { sessionId });
+      }
+      
+      const debtStats = await debtStatsQuery.getRawOne();
       
       const totalAmount = parseFloat(debtStats?.totalAmount) || 0;
       const totalPaid = parseFloat(debtStats?.totalPaid) || 0;
@@ -1000,11 +1359,17 @@ class RealTimeDashboard {
   }
   
   /**
-     * @param {{ count: (arg0: { where: { assignmentDate: { $gte: Date; $lt: Date; }; }; }) => any; }} assignmentRepo
-     * @param {{ createQueryBuilder: (arg0: string) => { (): any; new (): any; select: { (arg0: string, arg1: string): { (): any; new (): any; where: { (arg0: string, arg1: { start: Date; end: Date; }): { (): any; new (): any; andWhere: { (arg0: string, arg1: { status: string; }): { (): any; new (): any; getRawOne: { (): any; new (): any; }; }; new (): any; }; }; new (): any; }; }; new (): any; }; }; }} paymentRepo
-     * @param {string | number | Date} startDate
-     */
-  async getHourlyDistribution(assignmentRepo, paymentRepo, startDate) {
+   * Get hourly distribution
+   * @param {Object} assignmentRepo - Assignment repository
+   * @param {Object} paymentRepo - Payment repository
+   * @param {Date} startDate - Start date
+   * @param {Object} params - Query parameters
+   * @returns {Promise<Object>} Hourly distribution data
+   */
+  async getHourlyDistribution(assignmentRepo, paymentRepo, startDate, params) {
+    // @ts-ignore
+    const { currentSession = false, sessionId = null } = params;
+    
     try {
       const hourlyAssignments = [];
       const hourlyPayments = [];
@@ -1016,11 +1381,27 @@ class RealTimeDashboard {
         const hourEnd = new Date(startDate);
         hourEnd.setHours(hour + 1, 0, 0, 0);
         
-        const assignments = await assignmentRepo.count({
+        // @ts-ignore
+        let assignmentsQuery = assignmentRepo.count({
           where: {
             assignmentDate: { $gte: hourStart, $lt: hourEnd }
           }
         });
+        
+        if (currentSession && sessionId) {
+          // @ts-ignore
+          assignmentsQuery = assignmentRepo
+            // @ts-ignore
+            .createQueryBuilder("assignment")
+            .where("assignment.assignmentDate >= :hourStart AND assignment.assignmentDate < :hourEnd", {
+              hourStart,
+              hourEnd
+            })
+            .andWhere("assignment.session.id = :sessionId", { sessionId })
+            .getCount();
+        }
+        
+        const assignments = await assignmentsQuery;
         
         hourlyAssignments.push({
           hour: hour,
@@ -1035,15 +1416,21 @@ class RealTimeDashboard {
         const hourEnd = new Date(startDate);
         hourEnd.setHours(hour + 1, 0, 0, 0);
         
-        const payments = await paymentRepo
+        const paymentsQuery = paymentRepo
+          // @ts-ignore
           .createQueryBuilder("payment")
           .select("SUM(payment.netPay)", "total")
           .where("payment.paymentDate >= :start AND payment.paymentDate < :end", {
             start: hourStart,
             end: hourEnd
           })
-          .andWhere("payment.status = :status", { status: 'completed' })
-          .getRawOne();
+          .andWhere("payment.status = :status", { status: 'completed' });
+        
+        if (currentSession && sessionId) {
+          paymentsQuery.andWhere("payment.session.id = :sessionId", { sessionId });
+        }
+        
+        const payments = await paymentsQuery.getRawOne();
         
         hourlyPayments.push({
           hour: hour,
@@ -1060,11 +1447,8 @@ class RealTimeDashboard {
     }
   }
   
-  /**
-     * @param {number} assignments
-     * @param {number} completed
-     * @param {number} payments
-     */
+
+  // @ts-ignore
   getDailyRecommendations(assignments, completed, payments) {
     const recommendations = [];
     

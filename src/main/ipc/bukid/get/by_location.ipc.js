@@ -3,11 +3,19 @@
 
 const { AppDataSource } = require("../../../db/dataSource");
 const Bukid = require("../../../../entities/Bukid");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
+/**
+ * Get bukids by location scoped to current session
+ * @param {Object} params - Parameters
+ * @param {string} params.location - Location to search
+ * @param {number} params._userId - User ID for logging
+ * @returns {Promise<Object>} Response object
+ */
+// @ts-ignore
 module.exports = async function getBukidByLocation(params = {}) {
   try {
     const bukidRepository = AppDataSource.getRepository(Bukid);
-    // @ts-ignore
     const { location, _userId } = params;
     
     if (!location) {
@@ -18,14 +26,21 @@ module.exports = async function getBukidByLocation(params = {}) {
       };
     }
 
+    // Get current session ID
+    const currentSessionId = await farmSessionDefaultSessionId();
+
     const bukids = await bukidRepository.find({
-      where: { location: location },
+      where: { 
+        location: location,
+        // @ts-ignore
+        session: { id: currentSessionId }
+      },
       relations: ['pitaks']
     });
 
     return {
       status: true,
-      message: 'Bukid retrieved successfully',
+      message: 'Bukids retrieved successfully',
       data: { bukids }
     };
   } catch (error) {
@@ -33,7 +48,7 @@ module.exports = async function getBukidByLocation(params = {}) {
     return {
       status: false,
       // @ts-ignore
-      message: `Failed to retrieve bukid: ${error.message}`,
+      message: `Failed to retrieve bukids: ${error.message}`,
       data: null
     };
   }

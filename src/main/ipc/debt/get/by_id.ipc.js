@@ -14,7 +14,7 @@ module.exports = async (debtId, userId) => {
 
     const debt = await debtRepository.findOne({
       where: { id: debtId },
-      relations: ["worker", "history", "history.payment"],
+      relations: ["worker", "history", "history.payment", "session"],
     });
 
     if (!debt) {

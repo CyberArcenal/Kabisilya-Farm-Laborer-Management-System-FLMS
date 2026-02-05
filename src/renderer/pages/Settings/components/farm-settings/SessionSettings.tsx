@@ -47,7 +47,7 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({
         {/* DEFAULT SESSION SELECTOR */}
         <div className="md:col-span-2">
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Default Session *
+            Default Session ID
           </label>
           {loadingSessions ? (
             <div className="flex items-center gap-2 text-gray-500">
@@ -75,7 +75,6 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({
                 value={settings.default_session_id || ''}
                 onChange={(e) => updateField('default_session_id', e.target.value ? parseInt(e.target.value) : undefined)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                required
               >
                 <option value="">Select a session...</option>
                 {sessions.map((session) => (
@@ -84,63 +83,11 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({
                   </option>
                 ))}
               </select>
-
-              {settings.default_session_id && (
-                <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h4 className="font-medium text-blue-900">
-                        Selected Session Details
-                      </h4>
-                      {(() => {
-                        const selectedSession = sessions.find(s => s.id === settings.default_session_id);
-                        if (!selectedSession) return null;
-
-                        return (
-                          <div className="mt-1 space-y-1 text-sm text-blue-800">
-                            <p><strong>Name:</strong> {selectedSession.name}</p>
-                            <p><strong>Year:</strong> {selectedSession.year}</p>
-                            <p><strong>Season:</strong> {selectedSession.seasonType || 'Not specified'}</p>
-                            <p><strong>Status:</strong> {selectedSession.status}</p>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={loadSessions}
-                      className="text-blue-600 hover:text-blue-800"
-                    >
-                      <RefreshCw className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              )}
             </>
           )}
           <p className="text-xs text-gray-500 mt-1">
-            Required - all farm data will be tied to this session
+            The default session for farm operations
           </p>
-        </div>
-
-        {/* SESSION CREATION QUICK FORM */}
-        <div className="md:col-span-2">
-          <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
-            <h4 className="font-medium text-gray-700 mb-3">Quick Create Session</h4>
-            <button
-              type="button"
-              onClick={() => {
-                window.dispatchEvent(new CustomEvent('navigate', { detail: '/sessions/create' }));
-              }}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              Create New Session
-            </button>
-            <p className="text-xs text-gray-500 mt-2">
-              Create a new session if you don't see the one you need
-            </p>
-          </div>
         </div>
 
         <div>
@@ -160,17 +107,15 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Status
+            Year
           </label>
-          <select
-            value={settings.status || 'active'}
-            onChange={(e) => updateField('status', e.target.value)}
+          <input
+            type="number"
+            value={settings.year || ''}
+            onChange={(e) => updateField('year', e.target.value ? parseInt(e.target.value) : undefined)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          >
-            <option value="active">Active</option>
-            <option value="closed">Closed</option>
-            <option value="archived">Archived</option>
-          </select>
+            placeholder="e.g., 2024"
+          />
         </div>
 
         <div>
@@ -196,6 +141,21 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
           />
         </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Status
+          </label>
+          <select
+            value={settings.status || 'active'}
+            onChange={(e) => updateField('status', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          >
+            <option value="active">Active</option>
+            <option value="closed">Closed</option>
+            <option value="archived">Archived</option>
+          </select>
+        </div>
       </div>
 
       <div>
@@ -207,7 +167,7 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({
           onChange={(e) => updateField('notes', e.target.value)}
           rows={3}
           className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          placeholder="Optional metadata about the session"
+          placeholder="Optional notes about the session"
         />
       </div>
 
@@ -215,31 +175,11 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({
         <label className="flex items-center gap-2">
           <input
             type="checkbox"
-            checked={settings.require_default_session || true}
+            checked={settings.require_default_session || false}
             onChange={(e) => updateField('require_default_session', e.target.checked)}
             className="rounded border-gray-300"
           />
           <span className="text-sm text-gray-700">Require Default Session</span>
-        </label>
-
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={settings.auto_close_previous || false}
-            onChange={(e) => updateField('auto_close_previous', e.target.checked)}
-            className="rounded border-gray-300"
-          />
-          <span className="text-sm text-gray-700">Auto Close Previous Session</span>
-        </label>
-
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={settings.allow_multiple_active_sessions || false}
-            onChange={(e) => updateField('allow_multiple_active_sessions', e.target.checked)}
-            className="rounded border-gray-300"
-          />
-          <span className="text-sm text-gray-700">Allow Multiple Active Sessions</span>
         </label>
       </div>
     </div>

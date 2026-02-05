@@ -467,7 +467,7 @@ const UserTablePage: React.FC = () => {
       {/* User View Dialog */}
       {isViewDialogOpen && selectedUserId && (
         <UserViewDialog
-          id={selectedUserId}
+          userId={selectedUserId}
           onClose={closeViewDialog}
           onEdit={openEditDialog}
         />

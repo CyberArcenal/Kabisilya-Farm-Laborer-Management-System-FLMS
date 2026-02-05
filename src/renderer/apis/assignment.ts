@@ -26,10 +26,11 @@ export interface Assignment {
 }
 
 export interface Worker {
+  status: 'active' | 'inactive' | 'on-leave' | 'terminated';
+  email: any;
+  contact: any;
   id: number;
   name: string;
-  code: string;
-  contactNumber?: string;
 }
 
 export interface Pitak {
@@ -1291,45 +1292,53 @@ class AssignmentAPI {
   /**
    * Create assignment with validation
    */
-  async createAssignmentWithValidation(data: {
-    workerIds: number[];
-    pitakId: number;
-    luwangCount?: number;
-    assignmentDate: string;
-    notes?: string;
-  }): Promise<{
-    status: boolean;
-    message: string;
-    data: {
-      assignments: Assignment[];
-      summary: {
-        totalWorkers: number;
-        totalLuWangCount: number;
-        assignmentDate: string;
-        pitakId: number;
-      };
-    } | null;
-  }> {
-    try {
-      const validation = await this.validateAssignmentData(data);
+async createAssignmentWithValidation(data: {
+  workerIds: number[];
+  pitakId: number;
+  luwangCount?: number;
+  assignmentDate: string;
+  notes?: string;
+}): Promise<{
+  status: boolean;
+  message: string;
+  data: {
+    assignments: Assignment[];
+    summary: {
+      totalWorkers: number;
+      totalLuWangCount: number;
+      assignmentDate: string;
+      pitakId: number;
+    };
+  } | null;
+}> {
+  try {
+    const validation = await this.validateAssignmentData(data);
 
-      if (!validation.data.isValid) {
-        return {
-          status: false,
-          message: "Assignment data validation failed",
-          data: null,
-        };
-      }
+    if (!validation.data.isValid) {
+      // combine errors + warnings into a readable message
+      const errorMessages = [
+        ...(validation.data.errors || []),
+        ...(validation.data.warnings || [])
+      ];
 
-      return await this.createAssignment(data);
-    } catch (error: any) {
       return {
         status: false,
-        message: error.message || "Failed to create assignment",
+        message: errorMessages.length > 0
+          ? `Validation failed: ${errorMessages.join("; ")}`
+          : "Assignment data validation failed",
         data: null,
       };
     }
+
+    return await this.createAssignment(data);
+  } catch (error: any) {
+    return {
+      status: false,
+      message: error.message || "Failed to create assignment",
+      data: null,
+    };
   }
+}
 
   /**
    * Update assignment with validation

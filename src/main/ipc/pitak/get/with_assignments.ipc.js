@@ -1,12 +1,13 @@
-// src/ipc/pitak/get/with_assignments.ipc
+// src/ipc/pitak/get/with_assignments.ipc.js
 //@ts-check
 
 const Pitak = require("../../../../entities/Pitak");
 const Assignment = require("../../../../entities/Assignment");
 const { AppDataSource } = require("../../../db/dataSource");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
 // @ts-ignore
-module.exports = async (/** @type {any} */ pitakId, dateRange = {}, /** @type {any} */ userId) => {
+module.exports = async (pitakId, dateRange = {}, userId) => {
   try {
     if (!pitakId) {
       return { status: false, message: "Pitak ID is required", data: null };
@@ -14,22 +15,31 @@ module.exports = async (/** @type {any} */ pitakId, dateRange = {}, /** @type {a
 
     const pitakRepo = AppDataSource.getRepository(Pitak);
     const assignmentRepo = AppDataSource.getRepository(Assignment);
+    const currentSessionId = await farmSessionDefaultSessionId();
 
-    // Get pitak with bukid and kabisilya
+    // Get pitak with bukid and session filter
     const pitak = await pitakRepo.findOne({
-      where: { id: pitakId },
-      relations: ['bukid']
+      where: { 
+        id: pitakId,
+        // @ts-ignore
+        bukid: { session: { id: currentSessionId } }
+      },
+      relations: ['bukid', 'bukid.session']
     });
 
     if (!pitak) {
-      return { status: false, message: "Pitak not found", data: null };
+      return { status: false, message: "Pitak not found in current session", data: null };
     }
 
-    // Build assignment query
+    // Build assignment query with session filter
     const assignmentQuery = assignmentRepo
       .createQueryBuilder('assignment')
       .leftJoinAndSelect('assignment.worker', 'worker')
-      .where('assignment.pitakId = :pitakId', { pitakId });
+      .innerJoin('assignment.pitak', 'pitak')
+      .innerJoin('pitak.bukid', 'bukid')
+      .innerJoin('bukid.session', 'session')
+      .where('assignment.pitakId = :pitakId', { pitakId })
+      .andWhere('session.id = :sessionId', { sessionId: currentSessionId });
 
     // Apply date range if provided
     // @ts-ignore
@@ -47,9 +57,12 @@ module.exports = async (/** @type {any} */ pitakId, dateRange = {}, /** @type {a
       .orderBy('assignment.assignmentDate', 'DESC')
       .getMany();
 
-    // Calculate assignment statistics
+    // Calculate assignment statistics with session filter
     const assignmentStats = await assignmentRepo
       .createQueryBuilder('assignment')
+      .innerJoin('assignment.pitak', 'pitak')
+      .innerJoin('pitak.bukid', 'bukid')
+      .innerJoin('bukid.session', 'session')
       .select([
         'COUNT(*) as totalAssignments',
         'SUM(assignment.luwangCount) as totalLuWangAssigned',
@@ -59,12 +72,16 @@ module.exports = async (/** @type {any} */ pitakId, dateRange = {}, /** @type {a
         'SUM(CASE WHEN assignment.status = "cancelled" THEN 1 ELSE 0 END) as cancelledAssignments'
       ])
       .where('assignment.pitakId = :pitakId', { pitakId })
+      .andWhere('session.id = :sessionId', { sessionId: currentSessionId })
       .getRawOne();
 
-    // Get worker statistics
+    // Get worker statistics with session filter
     const workerStats = await assignmentRepo
       .createQueryBuilder('assignment')
       .leftJoin('assignment.worker', 'worker')
+      .innerJoin('assignment.pitak', 'pitak')
+      .innerJoin('pitak.bukid', 'bukid')
+      .innerJoin('bukid.session', 'session')
       .select([
         'COUNT(DISTINCT assignment.workerId) as uniqueWorkers',
         'worker.id as workerId',
@@ -73,19 +90,24 @@ module.exports = async (/** @type {any} */ pitakId, dateRange = {}, /** @type {a
         'SUM(assignment.luwangCount) as totalLuWang'
       ])
       .where('assignment.pitakId = :pitakId', { pitakId })
+      .andWhere('session.id = :sessionId', { sessionId: currentSessionId })
       .groupBy('assignment.workerId, worker.id, worker.name')
       .orderBy('totalLuWang', 'DESC')
       .getRawMany();
 
-    // Calculate daily assignment breakdown
+    // Calculate daily assignment breakdown with session filter
     const dailyBreakdown = await assignmentRepo
       .createQueryBuilder('assignment')
+      .innerJoin('assignment.pitak', 'pitak')
+      .innerJoin('pitak.bukid', 'bukid')
+      .innerJoin('bukid.session', 'session')
       .select([
         'DATE(assignment.assignmentDate) as assignmentDate',
         'COUNT(*) as assignmentsCount',
         'SUM(assignment.luwangCount) as totalLuWang'
       ])
       .where('assignment.pitakId = :pitakId', { pitakId })
+      .andWhere('session.id = :sessionId', { sessionId: currentSessionId })
       .groupBy('DATE(assignment.assignmentDate)')
       .orderBy('assignmentDate', 'DESC')
       .limit(30) // Last 30 days
@@ -163,7 +185,8 @@ module.exports = async (/** @type {any} */ pitakId, dateRange = {}, /** @type {a
           assignments: parseInt(d.assignmentsCount) || 0,
           totalLuWang: parseFloat(d.totalLuWang) || 0
         })),
-        period: dateRange
+        period: dateRange,
+        sessionId: currentSessionId,
       }
     };
 

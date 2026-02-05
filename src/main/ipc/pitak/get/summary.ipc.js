@@ -1,26 +1,26 @@
-// src/ipc/pitak/get/summary.ipc
+// src/ipc/pitak/get/summary.ipc.js
 //@ts-check
 
 const Pitak = require("../../../../entities/Pitak");
 const Assignment = require("../../../../entities/Assignment");
 const Payment = require("../../../../entities/Payment");
 const { AppDataSource } = require("../../../db/dataSource");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
 // @ts-ignore
-module.exports = async (
-  /** @type {any} */ bukidId,
-  /** @type {any} */ status,
-  /** @type {any} */ userId,
-) => {
+module.exports = async (bukidId, status, userId) => {
   try {
     const pitakRepo = AppDataSource.getRepository(Pitak);
     const assignmentRepo = AppDataSource.getRepository(Assignment);
     const paymentRepo = AppDataSource.getRepository(Payment);
+    const currentSessionId = await farmSessionDefaultSessionId();
 
-    // Build base query
+    // Build base query with session filter
     const query = pitakRepo
       .createQueryBuilder("pitak")
       .leftJoinAndSelect("pitak.bukid", "bukid")
+      .leftJoinAndSelect("bukid.session", "session")
+      .where("session.id = :sessionId", { sessionId: currentSessionId });
 
     // Apply filters
     if (bukidId) {
@@ -59,11 +59,14 @@ module.exports = async (
       };
     }
 
-    // Get assignment statistics for all pitaks
+    // Get assignment statistics for all pitaks with session filter
     const pitakIds = pitaks.map((p) => p.id);
 
     const assignmentStats = await assignmentRepo
       .createQueryBuilder("assignment")
+      .innerJoin("assignment.pitak", "pitak")
+      .innerJoin("pitak.bukid", "bukid")
+      .innerJoin("bukid.session", "session")
       .select([
         "assignment.pitakId as pitakId",
         "COUNT(*) as assignmentCount",
@@ -71,12 +74,16 @@ module.exports = async (
         'SUM(CASE WHEN assignment.status = "completed" THEN 1 ELSE 0 END) as completedAssignments',
       ])
       .where("assignment.pitakId IN (:...pitakIds)", { pitakIds })
+      .andWhere("session.id = :sessionId", { sessionId: currentSessionId })
       .groupBy("assignment.pitakId")
       .getRawMany();
 
-    // Get payment statistics for all pitaks
+    // Get payment statistics for all pitaks with session filter
     const paymentStats = await paymentRepo
       .createQueryBuilder("payment")
+      .innerJoin("payment.pitak", "pitak")
+      .innerJoin("pitak.bukid", "bukid")
+      .innerJoin("bukid.session", "session")
       .select([
         "payment.pitakId as pitakId",
         "COUNT(*) as paymentCount",
@@ -84,6 +91,7 @@ module.exports = async (
         "SUM(payment.grossPay) as totalGrossPay",
       ])
       .where("payment.pitakId IN (:...pitakIds)", { pitakIds })
+      .andWhere("session.id = :sessionId", { sessionId: currentSessionId })
       .groupBy("payment.pitakId")
       .getRawMany();
 
@@ -287,7 +295,7 @@ module.exports = async (
       meta: {
         totalPitaks: pitaks.length,
         totalBukids: Object.keys(bukidGroups).length,
-        dateRange: null,
+        sessionId: currentSessionId,
       },
     };
   } catch (error) {

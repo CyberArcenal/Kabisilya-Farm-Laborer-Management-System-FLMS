@@ -43,21 +43,6 @@ export const BukidSettings: React.FC<BukidSettingsProps> = ({ settings, onChange
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Area Unit
-          </label>
-          <select
-            value={settings.area_unit || 'hectares'}
-            onChange={(e) => updateField('area_unit', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          >
-            <option value="hectares">Hectares</option>
-            <option value="acres">Acres</option>
-            <option value="square_meters">Square Meters</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
             Max Bukid per Session
           </label>
           <input
@@ -83,11 +68,11 @@ export const BukidSettings: React.FC<BukidSettingsProps> = ({ settings, onChange
         <label className="flex items-center gap-2">
           <input
             type="checkbox"
-            checked={settings.auto_duplicate_per_session || false}
-            onChange={(e) => updateField('auto_duplicate_per_session', e.target.checked)}
+            checked={settings.location_required || false}
+            onChange={(e) => updateField('location_required', e.target.checked)}
             className="rounded border-gray-300"
           />
-          <span className="text-sm text-gray-700">Auto Duplicate per Session</span>
+          <span className="text-sm text-gray-700">Location Required</span>
         </label>
       </div>
     </div>

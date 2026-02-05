@@ -1,14 +1,13 @@
-// ipc/worker/bulk_create.ipc.js
+// src/ipc/worker/bulk_create.ipc.js
 //@ts-check
 
 const Worker = require("../../../entities/Worker");
 const UserActivity = require("../../../entities/UserActivity");
 const { AppDataSource } = require("../../db/dataSource");
 
-
 module.exports = async function bulkCreateWorkers(params = {}, queryRunner = null) {
   let shouldRelease = false;
-  
+
   if (!queryRunner) {
     // @ts-ignore
     queryRunner = AppDataSource.createQueryRunner();
@@ -22,34 +21,30 @@ module.exports = async function bulkCreateWorkers(params = {}, queryRunner = nul
   try {
     // @ts-ignore
     const { workers, _userId } = params;
-    
+
     if (!workers || !Array.isArray(workers) || workers.length === 0) {
       return {
         status: false,
-        message: 'Workers array is required and must not be empty',
-        data: null
+        message: "Workers array is required and must not be empty",
+        data: null,
       };
     }
 
-    // Validate each worker
-    /**
-       * @type {any[]}
-       */
+    // @ts-ignore
     const validWorkers = [];
     const errors = [];
-    
+
     for (let i = 0; i < workers.length; i++) {
       const workerData = workers[i];
-      
-      // Basic validation
+
       if (!workerData.name) {
         errors.push(`Worker ${i + 1}: Name is required`);
         continue;
       }
 
-      // Check for duplicate email in batch
       if (workerData.email) {
-        const duplicateInBatch = validWorkers.some(w => w.email === workerData.email);
+        // @ts-ignore
+        const duplicateInBatch = validWorkers.some((w) => w.email === workerData.email);
         if (duplicateInBatch) {
           errors.push(`Worker ${i + 1}: Email ${workerData.email} is duplicated in batch`);
           continue;
@@ -62,79 +57,73 @@ module.exports = async function bulkCreateWorkers(params = {}, queryRunner = nul
     if (errors.length > 0) {
       return {
         status: false,
-        message: 'Validation errors found',
-        data: { errors }
+        message: "Validation errors found",
+        data: { errors },
       };
     }
 
-    // Check for existing emails in database
     // @ts-ignore
     const workerRepository = queryRunner.manager.getRepository(Worker);
     const existingEmails = new Set();
-    
-    const emails = validWorkers.map(w => w.email).filter(email => email);
+
+    const emails = validWorkers.map((w) => w.email).filter((email) => email);
     if (emails.length > 0) {
       const existingWorkers = await workerRepository
-        .createQueryBuilder('worker')
-        .where('worker.email IN (:...emails)', { emails })
+        .createQueryBuilder("worker")
+        .where("worker.email IN (:...emails)", { emails })
         .getMany();
-      
-      existingWorkers.forEach((/** @type {{ email: any; }} */ w) => existingEmails.add(w.email));
+
+      // @ts-ignore
+      existingWorkers.forEach((w) => existingEmails.add(w.email));
     }
 
-    // Filter out workers with existing emails
-    const workersToCreate = validWorkers.filter(worker => 
-      !worker.email || !existingEmails.has(worker.email)
+    const workersToCreate = validWorkers.filter(
+      (worker) => !worker.email || !existingEmails.has(worker.email)
     );
 
-    const workersWithExistingEmails = validWorkers.filter(worker => 
-      worker.email && existingEmails.has(worker.email)
+    const workersWithExistingEmails = validWorkers.filter(
+      (worker) => worker.email && existingEmails.has(worker.email)
     );
 
     if (workersWithExistingEmails.length > 0) {
-      errors.push(...workersWithExistingEmails.map(w => 
-        `Worker ${w.name}: Email ${w.email} already exists in database`
-      ));
+      errors.push(
+        ...workersWithExistingEmails.map(
+          (w) => `Worker ${w.name}: Email ${w.email} already exists in database`
+        )
+      );
     }
 
-    // Create workers
     const createdWorkers = [];
     const currentDate = new Date();
 
     for (const workerData of workersToCreate) {
-      // @ts-ignore
-      const worker = queryRunner.manager.create(Worker, {
+      const worker = workerRepository.create({
         name: workerData.name,
         contact: workerData.contact || null,
         email: workerData.email || null,
         address: workerData.address || null,
-        status: workerData.status || 'active',
+        status: workerData.status || "active",
         hireDate: workerData.hireDate ? new Date(workerData.hireDate) : currentDate,
-        createdAt: currentDate,
-        updatedAt: currentDate
       });
 
-      // @ts-ignore
-      const savedWorker = await queryRunner.manager.save(worker);
+      const savedWorker = await workerRepository.save(worker);
       createdWorkers.push(savedWorker);
     }
 
-    // Log activity
     // @ts-ignore
     const activityRepo = queryRunner.manager.getRepository(UserActivity);
     const activity = activityRepo.create({
       user_id: _userId,
-      action: 'bulk_create_workers',
+      action: "bulk_create_workers",
       description: `Bulk created ${createdWorkers.length} workers`,
       details: JSON.stringify({
         totalRequested: workers.length,
         created: createdWorkers.length,
         skipped: workers.length - createdWorkers.length,
-        errors: errors.length > 0 ? errors : null
+        errors: errors.length > 0 ? errors : null,
       }),
       ip_address: "127.0.0.1",
       user_agent: "Kabisilya-Management-System",
-      created_at: new Date()
     });
     await activityRepo.save(activity);
 
@@ -152,21 +141,21 @@ module.exports = async function bulkCreateWorkers(params = {}, queryRunner = nul
           totalRequested: workers.length,
           successfullyCreated: createdWorkers.length,
           skipped: workers.length - createdWorkers.length,
-          errors: errors.length > 0 ? errors : null
-        }
-      }
+          errors: errors.length > 0 ? errors : null,
+        },
+      },
     };
   } catch (error) {
     if (shouldRelease) {
       // @ts-ignore
       await queryRunner.rollbackTransaction();
     }
-    console.error('Error in bulkCreateWorkers:', error);
+    console.error("Error in bulkCreateWorkers:", error);
     return {
       status: false,
       // @ts-ignore
       message: `Failed to bulk create workers: ${error.message}`,
-      data: null
+      data: null,
     };
   } finally {
     if (shouldRelease) {

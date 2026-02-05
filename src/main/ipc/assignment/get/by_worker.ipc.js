@@ -3,9 +3,10 @@
 const Assignment = require("../../../../entities/Assignment");
 const { AppDataSource } = require("../../../db/dataSource");
 const Worker = require("../../../../entities/Worker");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
 /**
- * Get assignments by worker
+ * Get assignments by worker scoped to current session
  * @param {number} workerId - Worker ID
  * @param {Object} filters - Additional filters
  * @param {number} userId - User ID for logging
@@ -15,7 +16,11 @@ const Worker = require("../../../../entities/Worker");
 module.exports = async (workerId, filters = {}, userId) => {
   try {
     if (!workerId) {
-      throw new Error("Worker ID is required");
+      return {
+        status: false,
+        message: "Worker ID is required",
+        data: { errors: ["Missing workerId parameter"] }
+      };
     }
 
     // Validate worker exists
@@ -23,15 +28,22 @@ module.exports = async (workerId, filters = {}, userId) => {
     const worker = await workerRepo.findOne({ where: { id: workerId } });
 
     if (!worker) {
-      throw new Error("Worker not found");
+      return {
+        status: false,
+        message: "Worker not found",
+        data: { errors: [`Worker ${workerId} not found`] }
+      };
     }
 
     const assignmentRepo = AppDataSource.getRepository(Assignment);
+    const currentSessionId = await farmSessionDefaultSessionId();
 
     const queryBuilder = assignmentRepo
       .createQueryBuilder("assignment")
       .leftJoinAndSelect("assignment.pitak", "pitak")
-      .where("assignment.worker = :workerId", { workerId })
+      .leftJoinAndSelect("assignment.session", "session")
+      .where("worker.id = :workerId", { workerId })
+      .andWhere("session.id = :sessionId", { sessionId: currentSessionId })
       .orderBy("assignment.assignmentDate", "DESC");
 
     // Apply date filters
@@ -39,22 +51,16 @@ module.exports = async (workerId, filters = {}, userId) => {
     if (filters.dateFrom && filters.dateTo) {
       queryBuilder.andWhere(
         "assignment.assignmentDate BETWEEN :dateFrom AND :dateTo",
-        {
-          // @ts-ignore
-          dateFrom: filters.dateFrom,
-          // @ts-ignore
-          dateTo: filters.dateTo,
-        }
+        // @ts-ignore
+        { dateFrom: filters.dateFrom, dateTo: filters.dateTo }
       );
     }
 
     // Apply status filter
     // @ts-ignore
     if (filters.status) {
-      queryBuilder.andWhere("assignment.status = :status", {
-        // @ts-ignore
-        status: filters.status,
-      });
+      // @ts-ignore
+      queryBuilder.andWhere("assignment.status = :status", { status: filters.status });
     }
 
     const assignments = await queryBuilder.getMany();
@@ -64,12 +70,8 @@ module.exports = async (workerId, filters = {}, userId) => {
       totalAssignments: assignments.length,
       totalLuWang: 0,
       averageLuWang: 0,
-      byStatus: {
-        active: 0,
-        completed: 0,
-        cancelled: 0,
-      },
-      byMonth: {},
+      byStatus: { active: 0, completed: 0, cancelled: 0 },
+      byMonth: {}
     };
 
     const formattedAssignments = assignments.map((assignment) => {
@@ -118,18 +120,16 @@ module.exports = async (workerId, filters = {}, userId) => {
               // @ts-ignore
               totalLuwang: parseFloat(assignment.pitak.totalLuwang) || 0,
               // @ts-ignore
-              status: assignment.pitak.status,
+              status: assignment.pitak.status
             }
-          : null,
+          : null
       };
     });
 
     // Calculate averages
     if (stats.totalAssignments > 0) {
       // @ts-ignore
-      stats.averageLuWang = (
-        stats.totalLuWang / stats.totalAssignments
-      ).toFixed(2);
+      stats.averageLuWang = (stats.totalLuWang / stats.totalAssignments).toFixed(2);
     }
     // @ts-ignore
     stats.totalLuWang = stats.totalLuWang.toFixed(2);
@@ -139,7 +139,7 @@ module.exports = async (workerId, filters = {}, userId) => {
       .map(([month, data]) => ({
         month,
         ...data,
-        averageLuWang: (data.totalLuWang / data.count).toFixed(2),
+        averageLuWang: (data.totalLuWang / data.count).toFixed(2)
       }))
       .sort((a, b) => b.month.localeCompare(a.month));
 
@@ -151,21 +151,20 @@ module.exports = async (workerId, filters = {}, userId) => {
           id: worker.id,
           name: worker.name,
           // @ts-ignore
-          code: worker.code,
-          // @ts-ignore
-          contactNumber: worker.contactNumber,
+          contactNumber: worker.contactNumber || null
         },
         assignments: formattedAssignments,
-        statistics: stats,
+        statistics: stats
       },
+      meta: { sessionId: currentSessionId }
     };
   } catch (error) {
     console.error("Error getting assignments by worker:", error);
     return {
       status: false,
+      message: "Failed to retrieve assignments",
       // @ts-ignore
-      message: `Failed to retrieve assignments: ${error.message}`,
-      data: null,
+      data: { errors: [error.message || String(error)] }
     };
   }
 };

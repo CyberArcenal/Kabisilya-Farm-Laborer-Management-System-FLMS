@@ -2,6 +2,7 @@
 
 // 📊 Farm Setting Types
 export const SettingType = {
+  GENERAL: "general",
   FARM_SESSION: "farm_session",
   FARM_BUKID: "farm_bukid",
   FARM_PITAK: "farm_pitak",
@@ -28,6 +29,7 @@ export interface SystemSettingData {
 export interface GroupedSettingsData {
   settings: SystemSettingData[];
   grouped_settings: {
+    general: GeneralSettings;
     farm_session: FarmSessionSettings;
     farm_bukid: FarmBukidSettings;
     farm_pitak: FarmPitakSettings;
@@ -36,6 +38,13 @@ export interface GroupedSettingsData {
     farm_debt: FarmDebtSettings;
     farm_audit: FarmAuditSettings;
   };
+}
+
+export interface GeneralSettings {
+  systemName?: string; // pangalan ng farm system o app
+  defaultCurrency?: string; // 'PHP', 'USD', etc.
+  locale?: string; // 'en-PH', 'tl-PH'
+  timezone?: string; // 'Asia/Manila'
 }
 
 // 1. FARM SESSION SETTINGS
@@ -68,55 +77,32 @@ export interface FarmPitakSettings {
 export interface FarmAssignmentSettings {
   default_luwang_per_worker?: number;
   date_behavior?: "system_date" | "manual_entry";
-  status_options?: string[]; // ['active', 'completed', 'cancelled']
+  status_options?: ("active" | "completed" | "cancelled")[];
   enable_notes_remarks?: boolean;
-  auto_assign_bukid?: boolean;
-  assignment_duration_days?: number;
-  allow_reassignment?: boolean;
-  max_workers_per_pitak?: number;
-  require_assignment_date?: boolean;
 }
 
 // 5. FARM PAYMENT SETTINGS
 export interface FarmPaymentSettings {
-  default_wage_multiplier?: number;
-  deduction_rules?: "manual" | "auto_debt_deduction";
-  other_deductions_config?: string; // JSON string for breakdown
-  payment_methods?: string[]; // ['cash', 'gcash', 'bank', 'check']
-  require_reference_number?: boolean;
-  status_options?: string[]; // ['pending', 'processing', 'completed', 'cancelled', 'partially_paid']
-  payment_terms_days?: number;
-  auto_calculate_total?: boolean;
-  tax_percentage?: number;
-  require_payment_date?: boolean;
+  rate_per_luwang?: number;
 }
 
 // 6. FARM DEBT SETTINGS
 export interface FarmDebtSettings {
+  debt_allocation_strategy?: "auto" | "equal" | "proportional";
   default_interest_rate?: number;
   payment_term_days?: number;
   grace_period_days?: number;
-  carry_over_to_next_session?: boolean;
-  status_options?: string[]; // ['pending', 'partially_paid', 'paid', 'cancelled', 'overdue']
-  interest_calculation_method?: "simple" | "compound";
-  compound_frequency?: "daily" | "weekly" | "monthly";
-  max_debt_amount?: number;
+  debt_limit?: number;
   require_debt_reason?: boolean;
   auto_apply_interest?: boolean;
 }
 
 // 7. FARM AUDIT SETTINGS
 export interface FarmAuditSettings {
-  log_actions_enabled?: boolean;
-  track_entity_id?: boolean;
-  capture_ip_address?: boolean;
-  capture_user_agent?: boolean;
-  tie_to_session?: boolean;
-  audit_retention_days?: number;
-  log_events?: string[]; // ['create', 'update', 'delete', 'view', 'export']
-  enable_real_time_logging?: boolean;
-  notify_on_critical_events?: boolean;
-  critical_events?: string[];
+  logActionsEnabled?: boolean;
+  auditRetentionDays?: number;
+  enableRealTimeLogging?: boolean;
+  notifyOnCriticalEvents?: boolean;
 }
 
 // 📊 API Responses
@@ -657,10 +643,10 @@ class SystemConfigAPI {
       if (config.data?.grouped_settings?.farm_payment) {
         return config.data.grouped_settings.farm_payment;
       }
-      return {};
+      return { rate_per_luwang: 230 };
     } catch (error) {
       console.error("Error getting farm payment settings:", error);
-      return {};
+      return { rate_per_luwang: 230 };
     }
   }
 
@@ -975,19 +961,40 @@ class SystemConfigAPI {
   async initializeDefaultSettings(): Promise<void> {
     try {
       const defaultSettings = [
-        // Farm session defaults
+        // General defaults
         {
-          key: "require_default_session",
-          value: true,
-          setting_type: SettingType.FARM_SESSION,
-          description: "Require default session for all farm operations",
+          key: "systemName",
+          value: "Farm Management System",
+          setting_type: SettingType.GENERAL,
+          description: "System name",
         },
+        {
+          key: "defaultCurrency",
+          value: "PHP",
+          setting_type: SettingType.GENERAL,
+          description: "Default currency",
+        },
+        {
+          key: "locale",
+          value: "tl-PH",
+          setting_type: SettingType.GENERAL,
+          description: "Default locale",
+        },
+        {
+          key: "timezone",
+          value: "Asia/Manila",
+          setting_type: SettingType.GENERAL,
+          description: "Default timezone",
+        },
+
+        // Farm session defaults
         {
           key: "season_type",
           value: "tag-ulan",
           setting_type: SettingType.FARM_SESSION,
           description: "Default season type",
         },
+
         // Farm bukid defaults
         {
           key: "default_status",
@@ -995,19 +1002,15 @@ class SystemConfigAPI {
           setting_type: SettingType.FARM_BUKID,
           description: "Default bukid status",
         },
-        {
-          key: "auto_duplicate_per_session",
-          value: true,
-          setting_type: SettingType.FARM_BUKID,
-          description: "Auto duplicate bukid per session",
-        },
+
         // Farm pitak defaults
         {
-          key: "default_total_luwang_capacity",
-          value: 100,
+          key: "require_location",
+          value: true,
           setting_type: SettingType.FARM_PITAK,
-          description: "Default total luwang capacity per pitak",
+          description: "Require location for pitak",
         },
+
         // Farm assignment defaults
         {
           key: "default_luwang_per_worker",
@@ -1015,44 +1018,29 @@ class SystemConfigAPI {
           setting_type: SettingType.FARM_ASSIGNMENT,
           description: "Default luwang count per worker",
         },
+
         // Farm payment defaults
         {
-          key: "default_wage_multiplier",
-          value: 1.0,
+          key: "rate_per_luwang",
+          value: 500,
           setting_type: SettingType.FARM_PAYMENT,
-          description: "Default wage multiplier",
+          description: "Default rate per luwang",
         },
-        {
-          key: "payment_methods",
-          value: JSON.stringify(["cash", "gcash"]),
-          setting_type: SettingType.FARM_PAYMENT,
-          description: "Available payment methods",
-        },
+
         // Farm debt defaults
         {
           key: "default_interest_rate",
-          value: 5,
+          value: 0,
           setting_type: SettingType.FARM_DEBT,
           description: "Default interest rate percentage",
         },
-        {
-          key: "carry_over_to_next_session",
-          value: true,
-          setting_type: SettingType.FARM_DEBT,
-          description: "Carry over debt to next session",
-        },
+
         // Farm audit defaults
         {
-          key: "log_actions_enabled",
+          key: "logActionsEnabled",
           value: true,
           setting_type: SettingType.FARM_AUDIT,
           description: "Enable logging of farm actions",
-        },
-        {
-          key: "tie_to_session",
-          value: true,
-          setting_type: SettingType.FARM_AUDIT,
-          description: "Tie audit logs to session",
         },
       ];
 

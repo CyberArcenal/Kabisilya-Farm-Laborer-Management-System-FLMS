@@ -8,3 +8,5 @@ kabisilyaManagement.db
 *.csv
 package-lock.json
 *.pdf
+/release
+/dist

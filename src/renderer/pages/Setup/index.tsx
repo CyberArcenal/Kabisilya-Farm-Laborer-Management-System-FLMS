@@ -9,22 +9,16 @@ import {
   Eye, 
   EyeOff,
   CheckCircle,
-  Building,
-  Key,
   AlertCircle,
   X,
   ArrowLeft,
   HelpCircle,
   Settings,
-  Truck,
-  Package,
   Users,
   BarChart3,
   Sprout,
-  MapPin,
-  Warehouse
+  Package
 } from 'lucide-react';
-import windowControlAPI from '../../apis/control';
 import userAPI from '../../apis/user';
 
 const KabisilyaFirstRunSetup: React.FC = () => {
@@ -35,7 +29,6 @@ const KabisilyaFirstRunSetup: React.FC = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showExitConfirm, setShowExitConfirm] = useState(false);
-  const [isMaximized, setIsMaximized] = useState(false);
 
   // Form fields
   const [username, setUsername] = useState('admin');
@@ -46,27 +39,13 @@ const KabisilyaFirstRunSetup: React.FC = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [farmName, setFarmName] = useState('');
 
   const navigate = useNavigate();
 
   // Check if setup is required
   useEffect(() => {
     checkSetupRequired();
-    setupWindowControls();
   }, []);
-
-  const setupWindowControls = async () => {
-    try {
-      const maximized = await windowControlAPI.isMaximized();
-      setIsMaximized(maximized);
-      
-      windowControlAPI.onWindowMaximized(() => setIsMaximized(true));
-      windowControlAPI.onWindowRestored(() => setIsMaximized(false));
-    } catch (error) {
-      console.error('Error setting up window controls:', error);
-    }
-  };
 
   const checkSetupRequired = async () => {
     try {
@@ -109,11 +88,6 @@ const KabisilyaFirstRunSetup: React.FC = () => {
 
     if (password !== confirmPassword) {
       setError('Passwords do not match');
-      return false;
-    }
-
-    if (!farmName.trim()) {
-      setError('Farm name is required');
       return false;
     }
 
@@ -162,7 +136,7 @@ const KabisilyaFirstRunSetup: React.FC = () => {
           
           setTimeout(() => {
             navigate('/dashboard');
-          }, 2000);
+          }, 1500);
         }
       }
     } catch (err: any) {
@@ -173,13 +147,8 @@ const KabisilyaFirstRunSetup: React.FC = () => {
     }
   };
 
-  const handleExit = async () => {
-    try {
-      await windowControlAPI.close();
-    } catch (error) {
-      console.error('Error closing window:', error);
-      window.close();
-    }
+  const handleExit = () => {
+    window.close();
   };
 
   const handleBack = () => {
@@ -223,159 +192,12 @@ const KabisilyaFirstRunSetup: React.FC = () => {
 
   return (
     <div className="h-screen" style={{ background: 'var(--background-color)' }}>
-      {/* Windows-style Top Bar */}
+      {/* Main Content */}
       <div style={{
-        height: '36px',
-        background: 'var(--topbar-bg)',
-        borderBottom: '1px solid var(--topbar-border)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 12px',
-        WebkitAppRegion: 'drag'
-      } as React.CSSProperties}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{
-            width: '22px',
-            height: '22px',
-            background: 'linear-gradient(135deg, var(--accent-green) 0%, var(--accent-earth) 100%)',
-            borderRadius: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <Sprout style={{ width: '14px', height: '14px', color: 'white' }} />
-          </div>
-          <span style={{
-            color: 'var(--sidebar-text)',
-            fontWeight: '500',
-            fontSize: '13px'
-          }}>
-            Kabisilya Management - First Run Setup
-          </span>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          <button
-            onClick={() => windowControlAPI.minimize()}
-            style={{
-              width: '28px',
-              height: '28px',
-              background: 'transparent',
-              border: 'none',
-              borderRadius: '3px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.background = 'var(--accent-green)';
-              e.currentTarget.style.color = 'white';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.color = 'var(--text-secondary)';
-            }}
-          >
-            <div style={{ width: '10px', height: '2px', background: 'currentColor' }}></div>
-          </button>
-
-          <button
-            onClick={() => windowControlAPI.toggleMaximize()}
-            style={{
-              width: '28px',
-              height: '28px',
-              background: 'transparent',
-              border: 'none',
-              borderRadius: '3px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.background = 'var(--accent-green)';
-              e.currentTarget.style.color = 'white';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.color = 'var(--text-secondary)';
-            }}
-          >
-            {isMaximized ? (
-              <div style={{
-                width: '8px',
-                height: '8px',
-                position: 'relative'
-              }}>
-                <div style={{
-                  width: '6px',
-                  height: '6px',
-                  border: '1.5px solid currentColor',
-                  position: 'absolute',
-                  top: 0,
-                  left: 0
-                }}></div>
-                <div style={{
-                  width: '6px',
-                  height: '6px',
-                  border: '1.5px solid currentColor',
-                  position: 'absolute',
-                  bottom: 0,
-                  right: 0,
-                  borderTopColor: 'transparent',
-                  borderLeftColor: 'transparent'
-                }}></div>
-              </div>
-            ) : (
-              <div style={{
-                width: '10px',
-                height: '10px',
-                border: '1.5px solid currentColor',
-                borderRadius: '1px'
-              }}></div>
-            )}
-          </button>
-
-          <button
-            onClick={() => setShowExitConfirm(true)}
-            style={{
-              width: '28px',
-              height: '28px',
-              background: 'transparent',
-              border: 'none',
-              borderRadius: '3px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--danger-color)',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.background = 'var(--danger-color)';
-              e.currentTarget.style.color = 'white';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.color = 'var(--danger-color)';
-            }}
-          >
-            <X style={{ width: '16px', height: '16px' }} />
-          </button>
-        </div>
-      </div>
-
-      {/* Main Content - Fixed Height */}
-      <div style={{
-        height: 'calc(100vh - 36px)',
+        height: '100vh',
         display: 'flex',
         justifyContent: 'center',
+        alignItems: 'center',
         padding: '20px',
         boxSizing: 'border-box'
       }}>
@@ -390,7 +212,7 @@ const KabisilyaFirstRunSetup: React.FC = () => {
           display: 'flex',
           flexDirection: 'column'
         }}>
-          {/* Setup Header - Compact */}
+          {/* Setup Header */}
           <div style={{
             padding: '24px 32px',
             background: 'linear-gradient(135deg, var(--sidebar-bg) 0%, #1a472a 100%)',
@@ -432,13 +254,13 @@ const KabisilyaFirstRunSetup: React.FC = () => {
                   fontSize: '14px',
                   lineHeight: 1.5
                 }}>
-                  Let's get your farm management system set up. This one-time process will configure your kabisilya, worker assignments, and financial tracking.
+                  Let's get your farm management system set up. This one-time process will configure your system and create an administrator account.
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Content Area - Fixed Height */}
+          {/* Content Area */}
           <div style={{
             display: 'flex',
             flex: 1,
@@ -573,7 +395,7 @@ const KabisilyaFirstRunSetup: React.FC = () => {
                   lineHeight: 1.5,
                   marginBottom: '12px'
                 }}>
-                  Contact farm administration for assistance.
+                  Contact system administrator for assistance.
                 </p>
               </div>
             </div>
@@ -742,7 +564,7 @@ const KabisilyaFirstRunSetup: React.FC = () => {
                     gap: '20px',
                     marginBottom: '24px'
                   }}>
-                    {/* Kabisilya Features Card */}
+                    {/* Features Card */}
                     <div style={{
                       background: 'var(--card-secondary-bg)',
                       borderRadius: '10px',
@@ -783,7 +605,7 @@ const KabisilyaFirstRunSetup: React.FC = () => {
                             color: 'var(--text-secondary)',
                             fontSize: '12px'
                           }}>
-                            Complete kabisilya management capabilities
+                            Complete farm management capabilities
                           </p>
                         </div>
                       </div>
@@ -791,7 +613,7 @@ const KabisilyaFirstRunSetup: React.FC = () => {
                       <div style={{ display: 'grid', gap: '10px' }}>
                         {[
                           { name: 'Worker Management', icon: Users, color: 'var(--accent-green)', desc: 'Manage farm workers and assignments' },
-                          { name: 'Kabisilya Tracking', icon: Sprout, color: 'var(--accent-earth)', desc: 'Track kabisilya and farm plots' },
+                          { name: 'Farm Plot Tracking', icon: Sprout, color: 'var(--accent-earth)', desc: 'Track farm plots and productivity' },
                           { name: 'Assignment Management', icon: Package, color: 'var(--accent-sky)', desc: 'Manage work assignments' },
                           { name: 'Financial Tracking', icon: BarChart3, color: 'var(--accent-gold)', desc: 'Track payments and debts' }
                         ].map((feature, index) => (
@@ -839,7 +661,7 @@ const KabisilyaFirstRunSetup: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Farm Information Card */}
+                    {/* System Information Card */}
                     <div style={{
                       background: 'var(--card-secondary-bg)',
                       borderRadius: '10px',
@@ -861,7 +683,7 @@ const KabisilyaFirstRunSetup: React.FC = () => {
                           alignItems: 'center',
                           justifyContent: 'center'
                         }}>
-                          <Warehouse style={{ 
+                          <Settings style={{ 
                             width: '20px', 
                             height: '20px', 
                             color: 'white' 
@@ -874,45 +696,15 @@ const KabisilyaFirstRunSetup: React.FC = () => {
                             color: 'var(--text-primary)',
                             marginBottom: '2px'
                           }}>
-                            Farm Configuration
+                            System Configuration
                           </h3>
                           <p style={{
                             color: 'var(--text-secondary)',
                             fontSize: '12px'
                           }}>
-                            Basic farm information
+                            Default system settings
                           </p>
                         </div>
-                      </div>
-
-                      <div style={{ marginBottom: '16px' }}>
-                        <label style={{
-                          display: 'block',
-                          fontSize: '12px',
-                          fontWeight: '600',
-                          color: 'var(--text-secondary)',
-                          marginBottom: '6px'
-                        }}>
-                          Farm Name
-                        </label>
-                        <input
-                          type="text"
-                          value={farmName}
-                          onChange={(e) => setFarmName(e.target.value)}
-                          style={{
-                            width: '100%',
-                            padding: '10px',
-                            borderRadius: '6px',
-                            border: '1px solid var(--border-light)',
-                            background: 'var(--card-bg)',
-                            color: 'var(--text-primary)',
-                            fontSize: '13px',
-                            transition: 'all 0.2s',
-                            boxSizing: 'border-box'
-                          }}
-                          placeholder="e.g., Green Valley Farm"
-                          required
-                        />
                       </div>
 
                       <div style={{
@@ -928,7 +720,7 @@ const KabisilyaFirstRunSetup: React.FC = () => {
                             color: 'var(--text-secondary)',
                             marginBottom: '4px'
                           }}>
-                            Default Units
+                            Measurement Units
                           </div>
                           <div style={{
                             fontSize: '12px',
@@ -968,10 +760,6 @@ const KabisilyaFirstRunSetup: React.FC = () => {
                   {/* Continue Button for Step 1 */}
                   <button
                     onClick={() => {
-                      if (!farmName.trim()) {
-                        setError('Farm name is required');
-                        return;
-                      }
                       setStep(2);
                       setError('');
                       setSuccess('');
@@ -1185,30 +973,6 @@ const KabisilyaFirstRunSetup: React.FC = () => {
                           />
                         </div>
 
-                        {/* Farm Name Display */}
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            fontSize: '12px',
-                            fontWeight: '600',
-                            color: 'var(--text-secondary)',
-                            marginBottom: '6px'
-                          }}>
-                            Farm Name
-                          </label>
-                          <div style={{
-                            padding: '10px',
-                            borderRadius: '6px',
-                            border: '1px solid var(--border-light)',
-                            background: 'var(--card-bg)',
-                            color: 'var(--text-primary)',
-                            fontSize: '13px',
-                            fontWeight: '500'
-                          }}>
-                            {farmName || 'Not set'}
-                          </div>
-                        </div>
-
                         {/* Password */}
                         <div>
                           <label style={{
@@ -1379,7 +1143,7 @@ const KabisilyaFirstRunSetup: React.FC = () => {
                             'Manage all farm workers',
                             'Create and assign work',
                             'Process payments and track debts',
-                            'Manage kabisilyas and farm plots',
+                            'Manage farm plots',
                             'View farm reports and analytics',
                             'Manage farm equipment',
                             'Configure system settings',
@@ -1425,13 +1189,20 @@ const KabisilyaFirstRunSetup: React.FC = () => {
                       >
                         {loading ? (
                           <>
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                            <div style={{
+                              animation: 'spin 1s linear infinite',
+                              borderRadius: '50%',
+                              width: '16px',
+                              height: '16px',
+                              border: '2px solid transparent',
+                              borderTop: '2px solid white',
+                              borderRight: '2px solid white'
+                            }}></div>
                             Creating Account...
                           </>
                         ) : (
                           <>
-                            <Key style={{ width: '16px', height: '16px' }} />
-                            Complete Setup & Start Using Kabisilya
+                            Complete Setup & Start Using System
                           </>
                         )}
                       </button>
@@ -1456,7 +1227,7 @@ const KabisilyaFirstRunSetup: React.FC = () => {
                 fontSize: '11px',
                 color: 'var(--text-tertiary)'
               }}>
-                Kabisilya Management System • Windows Desktop App
+                Kabisilya Management System • Desktop Application
               </span>
             </div>
             <div style={{ 

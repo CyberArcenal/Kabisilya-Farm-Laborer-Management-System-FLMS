@@ -1,18 +1,21 @@
 // ipc/bukid/get/all.ipc.js
-//@ts-check
+// @ts-nocheck
 
 const { AppDataSource } = require("../../../db/dataSource");
 const Bukid = require("../../../../entities/Bukid");
+const { farmSessionDefaultSessionId } = require("../../../../utils/system");
 
+/**
+ * Get all bukids scoped to current session
+ * @param {Object} params - Parameters including filters
+ * @param {Object} params.filters - Additional filters
+ * @param {number} params._userId - User ID for logging
+ * @returns {Promise<Object>} Response object
+ */
 module.exports = async function getAllBukid(params = {}) {
   try {
     const bukidRepository = AppDataSource.getRepository(Bukid);
-    const { 
-      // @ts-ignore
-      filters = {}, 
-      // @ts-ignore
-      _userId 
-    } = params;
+    const { filters = {}, _userId } = params;
     
     const { 
       status, 
@@ -22,8 +25,13 @@ module.exports = async function getAllBukid(params = {}) {
       sortOrder = 'DESC'
     } = filters;
 
+    // Get current session ID
+    const currentSessionId = await farmSessionDefaultSessionId();
+
     const queryBuilder = bukidRepository.createQueryBuilder('bukid')
-      .leftJoinAndSelect('bukid.pitaks', 'pitaks');
+      .leftJoinAndSelect('bukid.pitaks', 'pitaks')
+      .leftJoinAndSelect('bukid.session', 'session')
+      .where('session.id = :sessionId', { sessionId: currentSessionId });
 
     if (status) {
       queryBuilder.andWhere('bukid.status = :status', { status });
@@ -38,7 +46,7 @@ module.exports = async function getAllBukid(params = {}) {
 
     return {
       status: true,
-      message: 'Bukid retrieved successfully',
+      message: 'Bukids retrieved successfully',
       data: {
         bukids,
         pagination: {
@@ -53,8 +61,7 @@ module.exports = async function getAllBukid(params = {}) {
     console.error('Error in getAllBukid:', error);
     return {
       status: false,
-      // @ts-ignore
-      message: `Failed to retrieve bukid: ${error.message}`,
+      message: `Failed to retrieve bukids: ${error.message}`,
       data: null
     };
   }
