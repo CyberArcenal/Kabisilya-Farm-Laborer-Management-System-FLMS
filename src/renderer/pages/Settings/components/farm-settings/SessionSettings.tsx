@@ -1,17 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import { RefreshCw, Plus } from 'lucide-react';
-import type { FarmSessionSettings } from '../../../../apis/system_config';
-import sessionAPI, { type SessionListData } from '../../../../apis/session';
+import React, { useState, useEffect } from "react";
+import { RefreshCw, Plus } from "lucide-react";
+import type { FarmSessionSettings } from "../../../../apis/system_config";
+import sessionAPI, { type SessionListData } from "../../../../apis/session";
+import { useNavigate } from "react-router";
 
 interface SessionSettingsProps {
   settings: FarmSessionSettings;
   onChange: (field: keyof FarmSessionSettings, value: any) => void;
+  onCreateSession: () => void;
 }
 
-export const SessionSettings: React.FC<SessionSettingsProps> = ({ 
-  settings, 
-  onChange 
+export const SessionSettings: React.FC<SessionSettingsProps> = ({
+  settings,
+  onChange,
+  onCreateSession,
 }) => {
+  const navigate = useNavigate();
   const [sessions, setSessions] = useState<SessionListData[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
 
@@ -23,15 +27,15 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({
     try {
       setLoadingSessions(true);
       const response = await sessionAPI.getAll({
-        sortBy: 'startDate',
-        sortOrder: 'DESC'
+        sortBy: "startDate",
+        sortOrder: "DESC",
       });
 
       if (response.status && response.data) {
         setSessions(response.data);
       }
     } catch (error) {
-      console.error('Failed to load sessions:', error);
+      console.error("Failed to load sessions:", error);
     } finally {
       setLoadingSessions(false);
     }
@@ -62,7 +66,7 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  window.dispatchEvent(new CustomEvent('navigate', { detail: '/sessions/new' }));
+                  onCreateSession();
                 }}
                 className="mt-2 text-sm text-yellow-700 underline hover:text-yellow-800"
               >
@@ -72,8 +76,13 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({
           ) : (
             <>
               <select
-                value={settings.default_session_id || ''}
-                onChange={(e) => updateField('default_session_id', e.target.value ? parseInt(e.target.value) : undefined)}
+                value={settings.default_session_id || ""}
+                onChange={(e) =>
+                  updateField(
+                    "default_session_id",
+                    e.target.value ? parseInt(e.target.value) : undefined,
+                  )
+                }
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               >
                 <option value="">Select a session...</option>
@@ -95,8 +104,8 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({
             Season Type
           </label>
           <select
-            value={settings.season_type || 'tag-ulan'}
-            onChange={(e) => updateField('season_type', e.target.value)}
+            value={settings.season_type || "tag-ulan"}
+            onChange={(e) => updateField("season_type", e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
           >
             <option value="tag-ulan">Tag-ulan</option>
@@ -111,8 +120,13 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({
           </label>
           <input
             type="number"
-            value={settings.year || ''}
-            onChange={(e) => updateField('year', e.target.value ? parseInt(e.target.value) : undefined)}
+            value={settings.year || ""}
+            onChange={(e) =>
+              updateField(
+                "year",
+                e.target.value ? parseInt(e.target.value) : undefined,
+              )
+            }
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             placeholder="e.g., 2024"
           />
@@ -124,8 +138,8 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({
           </label>
           <input
             type="date"
-            value={settings.start_date || ''}
-            onChange={(e) => updateField('start_date', e.target.value)}
+            value={settings.start_date || ""}
+            onChange={(e) => updateField("start_date", e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
           />
         </div>
@@ -136,8 +150,8 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({
           </label>
           <input
             type="date"
-            value={settings.end_date || ''}
-            onChange={(e) => updateField('end_date', e.target.value)}
+            value={settings.end_date || ""}
+            onChange={(e) => updateField("end_date", e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
           />
         </div>
@@ -147,8 +161,8 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({
             Status
           </label>
           <select
-            value={settings.status || 'active'}
-            onChange={(e) => updateField('status', e.target.value)}
+            value={settings.status || "active"}
+            onChange={(e) => updateField("status", e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
           >
             <option value="active">Active</option>
@@ -163,8 +177,8 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({
           Notes
         </label>
         <textarea
-          value={settings.notes || ''}
-          onChange={(e) => updateField('notes', e.target.value)}
+          value={settings.notes || ""}
+          onChange={(e) => updateField("notes", e.target.value)}
           rows={3}
           className="w-full px-3 py-2 border border-gray-300 rounded-lg"
           placeholder="Optional notes about the session"
@@ -176,7 +190,9 @@ export const SessionSettings: React.FC<SessionSettingsProps> = ({
           <input
             type="checkbox"
             checked={settings.require_default_session || false}
-            onChange={(e) => updateField('require_default_session', e.target.checked)}
+            onChange={(e) =>
+              updateField("require_default_session", e.target.checked)
+            }
             className="rounded border-gray-300"
           />
           <span className="text-sm text-gray-700">Require Default Session</span>

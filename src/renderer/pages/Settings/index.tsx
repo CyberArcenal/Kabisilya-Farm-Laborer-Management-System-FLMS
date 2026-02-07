@@ -23,9 +23,12 @@ import { DebtSettings } from "./components/farm-settings/DebtSettings";
 import { AuditSettings } from "./components/farm-settings/AuditSettings";
 import Toast from "./components/Toast";
 import { BukidSettings } from "./components/farm-settings/BukidSettings";
+import SessionFormDialog from "../Session/Dialogs/SessionFormDialog";
+import { dialogs } from "../../utils/dialogs";
 
 const FarmManagementSettingsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState("session");
+  const [isSessionFormOpen, setIsSessionFormOpen] = useState(false);
   const [toast, setToast] = useState<{
     message: string;
     type: "success" | "error" | "info";
@@ -359,6 +362,9 @@ const FarmManagementSettingsPage: React.FC = () => {
               onChange={(field, value) =>
                 handleCategoryChange("farm_session", field, value)
               }
+              onCreateSession={()=> {
+                setIsSessionFormOpen(true);
+              }}
             />
           )}
 
@@ -424,6 +430,20 @@ const FarmManagementSettingsPage: React.FC = () => {
           message={toast.message}
           type={toast.type}
           onClose={() => setToast(null)}
+        />
+      )}
+
+          {/* Session Form Dialog */}
+      {isSessionFormOpen && (
+        <SessionFormDialog
+          id={undefined}
+          mode={"add"}
+          onClose={() => {setIsSessionFormOpen(false)}}
+          onSuccess={ async () => {
+            await dialogs.success("Session Created, New session has been created successfully.");
+            setIsSessionFormOpen(false);
+            handleRefresh();
+          }}
         />
       )}
     </div>
