@@ -1,18 +1,18 @@
 // components/Worker/hooks/useWorkerData.ts
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import workerAPI from "../../../../apis/worker";
+import workerAPI, { 
+  type WorkerData, 
+  type WorkerListResponse, 
+  type WorkerResponse, 
+  type WorkerStats,
+  type WorkerSearchParams 
+} from "../../../../apis/worker";
 import { showError } from "../../../../utils/notification";
 
-type WorkerApiShape =
-  | any[] // plain array
-  | { workers: any[]; pagination?: { total?: number; totalPages?: number } }
-  | { items: any[]; pagination?: { total?: number; totalPages?: number } }
-  | Record<string, any>;
-
 export const useWorkerData = () => {
-  const [allWorkers, setAllWorkers] = useState<any[]>([]);
-  const [workers, setWorkers] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>(null);
+  const [allWorkers, setAllWorkers] = useState<WorkerData[]>([]);
+  const [workers, setWorkers] = useState<WorkerData[]>([]);
+  const [stats, setStats] = useState<WorkerStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,112 +36,59 @@ export const useWorkerData = () => {
 
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const parseResponse = (data: WorkerApiShape) => {
-    if (Array.isArray(data)) {
-      return {
-        items: data,
-        total: data.length,
-        totalPages: Math.max(1, Math.ceil(data.length / limit)),
-      };
-    }
-    if (data && Array.isArray((data as any).workers)) {
-      const items = (data as any).workers as any[];
-      const pagination = (data as any).pagination;
-      return {
-        items,
-        total: pagination?.total ?? items.length,
-        totalPages:
-          pagination?.totalPages ??
-          Math.max(1, Math.ceil(items.length / limit)),
-      };
-    }
-    if (data && Array.isArray((data as any).items)) {
-      const items = (data as any).items as any[];
-      const pagination = (data as any).pagination;
-      return {
-        items,
-        total: pagination?.total ?? items.length,
-        totalPages:
-          pagination?.totalPages ??
-          Math.max(1, Math.ceil(items.length / limit)),
-      };
-    }
-    if (data && Array.isArray((data as any).data)) {
-      const items = (data as any).data as any[];
-      const pagination = (data as any).pagination;
-      return {
-        items,
-        total: pagination?.total ?? items.length,
-        totalPages:
-          pagination?.totalPages ??
-          Math.max(1, Math.ceil(items.length / limit)),
-      };
-    }
-    return { items: [] as any[], total: 0, totalPages: 1 };
-  };
-
   const fetchWorkers = useCallback(async () => {
     try {
       setRefreshing(true);
       setError(null);
 
-      const params: any = {
+      // Build search parameters
+      const searchParams: WorkerSearchParams = {
+        query: searchQuery.trim(),
         page: currentPage,
         limit,
         sortBy,
         sortOrder,
         ...(statusFilter !== "all" && { status: statusFilter }),
-        ...(kabisilyaFilter != null && { kabisilyaId: kabisilyaFilter }),
-        ...(searchQuery.trim() && { query: searchQuery.trim() }),
       };
 
-      let response: any;
-      // Prefer dedicated search endpoint if it exists and there's a query
-      if (
-        searchQuery.trim() &&
-        typeof (workerAPI as any).searchWorkers === "function"
-      ) {
-        // some APIs accept params object, some accept (query, params). Try both safely.
-        try {
-          response = await (workerAPI as any).searchWorkers(params);
-        } catch {
-          response = await (workerAPI as any).searchWorkers(
-            searchQuery.trim(),
-            params,
-          );
-        }
-      } else if (typeof (workerAPI as any).getAllWorkers === "function") {
-        // try calling with params object
-        try {
-          response = await (workerAPI as any).getAllWorkers(params);
-        } catch {
-          // fallback to positional signature if present: (page, limit, sortBy, sortOrder, status)
-          try {
-            response = await (workerAPI as any).getAllWorkers(
-              currentPage,
-              limit,
-              sortBy,
-              sortOrder,
-              statusFilter === "inactive",
-            );
-          } catch {
-            // last resort: call generic getAll
-            response = await (workerAPI as any).getAll(params);
-          }
-        }
+      let response: WorkerResponse<WorkerListResponse>;
+      
+      if (searchQuery.trim()) {
+        // Use search endpoint when there's a query
+        response = await workerAPI.searchWorkers(searchParams);
+      } else if (statusFilter !== "all") {
+        // Use status filter endpoint
+        response = await workerAPI.getWorkerByStatus(statusFilter, {
+          page: currentPage,
+          limit
+        });
       } else {
-        // generic fallback
-        response = await (workerAPI as any).getAll(params);
+        // Get all workers
+        response = await workerAPI.getAllWorkers({
+          page: currentPage,
+          limit,
+          sortBy,
+          sortOrder,
+        });
       }
 
-      if (!response || !response.status) {
-        throw new Error(response?.message || "Failed to fetch workers");
+      if (!response.status) {
+        throw new Error(response.message || "Failed to fetch workers");
       }
 
-      const parsed = parseResponse(response.data);
-      setAllWorkers(parsed.items);
-      setTotalItems(parsed.total);
-      setTotalPages(parsed.totalPages);
+      if (response.data) {
+        const items = response.data.workers;
+        const pagination = response.data.pagination;
+        
+        setAllWorkers(items);
+        setTotalItems(pagination.total);
+        setTotalPages(pagination.totalPages);
+        
+        // Update stats if available in response
+        if (response.data.stats) {
+          setStats(response.data.stats);
+        }
+      }
     } catch (err: any) {
       setError(err?.message ?? "Unknown error");
       showError(err?.message ?? "Failed to fetch workers");
@@ -155,17 +102,15 @@ export const useWorkerData = () => {
     limit,
     searchQuery,
     statusFilter,
-    kabisilyaFilter,
     sortBy,
     sortOrder,
   ]);
 
   const fetchStats = useCallback(async () => {
     try {
-      const response = await (workerAPI as any).getWorkerStats();
-      if (response?.status) {
-        // some APIs return { stats: {...} } or direct object
-        setStats(response.data?.stats ?? response.data ?? null);
+      const response = await workerAPI.getWorkerStats();
+      if (response?.status && response.data) {
+        setStats(response.data.stats);
       }
     } catch (err) {
       console.error("Failed to fetch worker stats:", err);
@@ -185,12 +130,16 @@ export const useWorkerData = () => {
           bValue = (b.name || "").toLowerCase();
           break;
         case "status":
-          aValue = a.isActive == null ? "" : a.isActive ? "active" : "inactive";
-          bValue = b.isActive == null ? "" : b.isActive ? "active" : "inactive";
+          aValue = a.status || "";
+          bValue = b.status || "";
           break;
         case "createdAt":
           aValue = a.createdAt ? new Date(a.createdAt).getTime() : 0;
           bValue = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          break;
+        case "hireDate":
+          aValue = a.hireDate ? new Date(a.hireDate).getTime() : 0;
+          bValue = b.hireDate ? new Date(b.hireDate).getTime() : 0;
           break;
         default:
           aValue = a.id ?? 0;
@@ -229,6 +178,12 @@ export const useWorkerData = () => {
     };
   }, [searchQuery, fetchWorkers]);
 
+  // Handle filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+    fetchWorkers();
+  }, [statusFilter, sortBy, sortOrder]);
+
   // Reset selections on page change
   useEffect(() => {
     setSelectedWorkers([]);
@@ -251,17 +206,31 @@ export const useWorkerData = () => {
     [sortBy],
   );
 
+  // Handle page change with fetch
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(page);
+    fetchWorkers();
+  }, [fetchWorkers]);
+
   return {
+    // Data
     workers,
     allWorkers,
     stats,
+    
+    // Loading states
     loading,
     refreshing,
     error,
+    
+    // Pagination
     currentPage,
     totalPages,
     totalItems,
     limit,
+    handlePageChange,
+    
+    // Filters
     searchQuery,
     setSearchQuery,
     statusFilter,
@@ -270,15 +239,21 @@ export const useWorkerData = () => {
     setKabisilyaFilter,
     viewMode,
     setViewMode,
+    
+    // Selection
     selectedWorkers,
     setSelectedWorkers,
-    fetchWorkers,
-    handleRefresh,
-    setCurrentPage,
+    
+    // Sorting
     sortBy,
     setSortBy,
     sortOrder,
     setSortOrder,
     handleSort,
+    
+    // Actions
+    fetchWorkers,
+    handleRefresh,
+    setCurrentPage,
   };
 };

@@ -252,7 +252,7 @@ const WorkerActionsDropdown: React.FC<WorkerActionsDropdownProps> = ({
                       // Record Payment action
                     });
                   }}
-                  className="flex items-center gap-3 w-full px-2 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded cursor-pointer"
+                  className="flex items-center gap-3 w-full px-2 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded cursor-pointer hidden"
                 >
                   <CreditCard
                     className="w-4 h-4"
@@ -331,7 +331,7 @@ const WorkerActionsDropdown: React.FC<WorkerActionsDropdownProps> = ({
                     e.stopPropagation();
                     handleAction(onGenerateReport);
                   }}
-                  className="flex items-center gap-3 w-full px-2 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded cursor-pointer"
+                  className="flex items-center gap-3 w-full px-2 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded cursor-pointer hidden"
                 >
                   <Printer
                     className="w-4 h-4"
@@ -361,7 +361,7 @@ const WorkerActionsDropdown: React.FC<WorkerActionsDropdownProps> = ({
                       // Export to PDF
                     });
                   }}
-                  className="flex items-center gap-3 w-full px-2 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded cursor-pointer"
+                  className="flex items-center gap-3 w-full px-2 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded cursor-pointer hidden"
                 >
                   <Download
                     className="w-4 h-4"
@@ -385,7 +385,7 @@ const WorkerActionsDropdown: React.FC<WorkerActionsDropdownProps> = ({
                       // View transactions
                     });
                   }}
-                  className="flex items-center gap-3 w-full px-2 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded cursor-pointer"
+                  className="flex items-center gap-3 w-full px-2 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded cursor-pointer hidden"
                 >
                   <FileDigit className="w-4 h-4" />
                   <span>View Transactions</span>
@@ -397,22 +397,10 @@ const WorkerActionsDropdown: React.FC<WorkerActionsDropdownProps> = ({
                       // View activity
                     });
                   }}
-                  className="flex items-center gap-3 w-full px-2 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded cursor-pointer"
+                  className="flex items-center gap-3 w-full px-2 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded cursor-pointer hidden"
                 >
                   <Activity className="w-4 h-4" />
                   <span>Activity Log</span>
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleAction(() => {
-                      // Transfer to another kabisilya
-                    });
-                  }}
-                  className="flex items-center gap-3 w-full px-2 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded cursor-pointer"
-                >
-                  <ArrowUpDown className="w-4 h-4" />
-                  <span>Transfer Kabisilya</span>
                 </button>
               </div>
             </div>

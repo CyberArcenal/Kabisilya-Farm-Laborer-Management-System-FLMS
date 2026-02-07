@@ -464,7 +464,7 @@ const BukidTableRow: React.FC<BukidTableRowProps> = ({
                   </span>
                   <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600 flex items-center gap-1">
                     <Hash className="w-3 h-3" />
-                    {bukidSummary.totalLuwang || 0} luwang
+                    {bukidSummary.totalLuwang.toFixed(2) || 0} luwang
                   </span>
                 </div>
               )}

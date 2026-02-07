@@ -493,7 +493,7 @@ const PitakProductivityPage: React.FC = () => {
                                                             {formatNumber(pitak.totalLuwang)}
                                                         </div>
                                                         <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                                                            {pitak.metrics.completedLuwang} completed
+                                                            {pitak.metrics.completedLuwang.toFixed(2)} completed
                                                         </div>
                                                     </td>
                                                     <td className="py-3 px-4">

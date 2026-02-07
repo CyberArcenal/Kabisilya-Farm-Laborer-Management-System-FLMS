@@ -117,7 +117,7 @@ export const useWorkerActions = (
 
         try {
             showToast(`${action.charAt(0).toUpperCase() + action.slice(1)}ing worker...`, 'info');
-            const response = await workerAPI.updateWorkerStatus(id, newStatus);
+            const response = await workerAPI.updateWorkerStatus(id, newStatus as "active" | "inactive" | "on-leave" | "terminated");
 
             if (response.status) {
                 showSuccess(`Worker ${action}d successfully`);
@@ -137,15 +137,16 @@ export const useWorkerActions = (
 
             if (response.status) {
                 const reportWindow = window.open('', '_blank');
+                const workerName = await workerAPI.getWorkerById(id).then(res => res.data?.worker?.name || 'Unknown Worker');
                 if (reportWindow) {
                     reportWindow.document.write(`
                         <html>
                             <head>
-                                <title>Worker Report - ${response.data.worker.name}</title>
+                                <title>Worker Report - ${workerName}</title>
                             </head>
                             <body>
                                 <h1>Worker Report</h1>
-                                <p>Generated: ${new Date(response.data.generatedAt).toLocaleString()}</p>
+                                <p>Generated: ${new Date(response.data?.metadata?.generatedAt || new Date()).toLocaleString()}</p>
                             </body>
                         </html>
                     `);

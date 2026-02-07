@@ -4,7 +4,6 @@ import userAPI from '../apis/user';
 import ProtectedRoute from '../app/ProtectedRoute';
 import { useEffect, useState } from 'react';
 import Layout from '../layouts/Layout';
-import DashboardPage from '../pages/dashboard';
 import KabisilyaFirstRunSetup from '../pages/Setup';
 import Login from '../pages/Auth/Login';
 // import BukidTablePage from '../pages/Bukid/Table';
@@ -38,6 +37,7 @@ import SessionTablePage from '../pages/Session/SessionTablePage';
 import FarmManagementSettingsPage from '../pages/Settings';
 import HistoryPage from '../pages/History';
 import MyProfileView from '../pages/User/Table/Dialogs/MyProfile/View';
+import DashboardPage from '../pages/dashboard/DashboardPage';
 
 // import FarmManagementSettingsPage from '../pages/Settings/FarmManagementSettingsPage';
 

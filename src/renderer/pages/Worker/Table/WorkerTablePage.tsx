@@ -1,5 +1,5 @@
 // components/Worker/WorkerTablePage.tsx
-import React, { useState } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   Users,
   Plus,
@@ -20,9 +20,28 @@ import WorkerPagination from "./components/WorkerPagination";
 import WorkerGridView from "./components/WorkerGridView";
 import WorkerViewDialog from "./Dialogs/WorkerViewDialog";
 import { dialogs } from "../../../utils/dialogs";
+import workerAPI from "../../../apis/worker";
+
+// Define type for worker with financial data
+export interface WorkerWithFinancial {
+  id: number;
+  name: string;
+  contact: string | null;
+  email: string | null;
+  address: string | null;
+  status: "active" | "inactive" | "on-leave" | "terminated";
+  hireDate: string | Date | null;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+  totalDebt?: number;
+  totalPaid?: number;
+  currentBalance?: number;
+}
 
 const WorkerTablePage: React.FC = () => {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [workersWithFinancials, setWorkersWithFinancials] = useState<WorkerWithFinancial[]>([]);
+  const [loadingFinancials, setLoadingFinancials] = useState(false);
 
   const {
     workers,
@@ -48,6 +67,7 @@ const WorkerTablePage: React.FC = () => {
     setSortBy,
     sortOrder,
     setSortOrder,
+    limit,
   } = useWorkerData();
 
   const [isFormDialogOpen, setIsFormDialogOpen] = useState(false);
@@ -62,7 +82,68 @@ const WorkerTablePage: React.FC = () => {
     handleUpdateStatus,
     handleGenerateReport,
     handleImportCSV,
-  } = useWorkerActions(workers, fetchWorkers, selectedWorkers);
+  } = useWorkerActions(workersWithFinancials, fetchWorkers, selectedWorkers);
+
+  // Fetch financial data for workers
+  const fetchWorkersFinancialData = useCallback(async () => {
+    if (!workers.length) {
+      setWorkersWithFinancials([]);
+      return;
+    }
+
+    setLoadingFinancials(true);
+    try {
+      const workersWithData = await Promise.all(
+        workers.map(async (worker) => {
+          try {
+            // Use the workerAPI to get financial summary
+            const response = await workerAPI.getWorkerSummary(worker.id);
+            if (response.status && response.data?.summary?.financial) {
+              return {
+                ...worker,
+                totalDebt: response.data.summary.financial.totalDebt || 0,
+                totalPaid: response.data.summary.financial.totalPaid || 0,
+                currentBalance: response.data.summary.financial.currentBalance || 0,
+              };
+            }
+          } catch (error) {
+            console.error(`Failed to fetch financial data for worker ${worker.id}:`, error);
+          }
+          return {
+            ...worker,
+            totalDebt: 0,
+            totalPaid: 0,
+            currentBalance: 0,
+          };
+        })
+      );
+      setWorkersWithFinancials(workersWithData);
+    } catch (error) {
+      console.error("Failed to fetch workers financial data:", error);
+      setWorkersWithFinancials(workers.map(w => ({
+        ...w,
+        totalDebt: 0,
+        totalPaid: 0,
+        currentBalance: 0,
+      })));
+    } finally {
+      setLoadingFinancials(false);
+    }
+  }, [workers]);
+
+  // Update financial data when workers change
+  useEffect(() => {
+    if (!loading && workers.length > 0) {
+      fetchWorkersFinancialData();
+    } else {
+      setWorkersWithFinancials(workers.map(w => ({
+        ...w,
+        totalDebt: 0,
+        totalPaid: 0,
+        currentBalance: 0,
+      })));
+    }
+  }, [workers, loading, fetchWorkersFinancialData]);
 
   // Dialog handlers
   const openCreateDialog = () => {
@@ -99,10 +180,10 @@ const WorkerTablePage: React.FC = () => {
 
   // Selection handlers
   const toggleSelectAll = () => {
-    if (selectedWorkers.length === workers.length) {
+    if (selectedWorkers.length === workersWithFinancials.length) {
       setSelectedWorkers([]);
     } else {
-      setSelectedWorkers(workers.map((w) => w.id));
+      setSelectedWorkers(workersWithFinancials.map((w) => w.id));
     }
   };
 
@@ -236,6 +317,9 @@ const WorkerTablePage: React.FC = () => {
       );
     }
   };
+
+  // Combined loading state
+  const isLoading = loading || loadingFinancials;
 
   // Error state
   if (error && !workers.length && !loading) {
@@ -387,12 +471,12 @@ const WorkerTablePage: React.FC = () => {
             )}
 
             {/* Loading State */}
-            {loading && !refreshing && (
+            {isLoading && !refreshing && (
               <div className="mb-6">{renderLoadingSkeleton()}</div>
             )}
 
             {/* Table or Grid View */}
-            {!loading && workers.length === 0 ? (
+            {!isLoading && workersWithFinancials.length === 0 ? (
               <div className="flex items-center justify-center h-64 rounded-xl border-2 border-dashed border-gray-300 bg-white">
                 <div className="text-center p-8">
                   <Users
@@ -418,12 +502,12 @@ const WorkerTablePage: React.FC = () => {
                   )}
                 </div>
               </div>
-            ) : !loading && workers.length > 0 ? (
+            ) : !isLoading && workersWithFinancials.length > 0 ? (
               <>
                 <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
                   {viewMode === "table" ? (
                     <WorkerTableView
-                      workers={workers}
+                      workers={workersWithFinancials}
                       selectedWorkers={selectedWorkers}
                       toggleSelectAll={toggleSelectAll}
                       toggleSelectWorker={toggleSelectWorker}
@@ -439,7 +523,7 @@ const WorkerTablePage: React.FC = () => {
                   ) : (
                     <div className="p-6">
                       <WorkerGridView
-                        workers={workers}
+                        workers={workersWithFinancials}
                         selectedWorkers={selectedWorkers}
                         toggleSelectWorker={toggleSelectWorker}
                         onView={openViewDialog}
@@ -459,7 +543,7 @@ const WorkerTablePage: React.FC = () => {
                       currentPage={currentPage}
                       totalPages={totalPages}
                       totalItems={totalItems}
-                      limit={10}
+                      limit={limit}
                       onPageChange={setCurrentPage}
                     />
                   </div>
