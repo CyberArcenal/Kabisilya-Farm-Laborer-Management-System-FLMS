@@ -6,8 +6,8 @@ import React, {
   useReducer,
   useCallback,
 } from "react";
-import type { GroupedSettingsData, SettingType, UpdateCategorySettingsData } from "../api/core/system_config";
-import systemConfigAPI from "../api/core/system_config";
+import type { GroupedSettingsData, SettingType, UpdateCategorySettingsData } from "../api/utils/system_config";
+import systemConfigAPI from "../api/utils/system_config";
 
 
 // State shape

@@ -1,67 +1,54 @@
 // src/stateTransitionServices/PaymentStateTransitionService.js
-// @ts-check
 const auditLogger = require("../utils/auditLogger");
 const { logger } = require("../utils/logger");
-const PaymentHistory = require("../entities/PaymentHistory");
 const { saveDb } = require("../utils/dbUtils/dbActions");
-const { AppDataSource } = require("../main/db/datasource");
 
 class PaymentStateTransitionService {
-  // @ts-ignore
   constructor(dataSource) {
     this.dataSource = dataSource;
   }
 
-  // @ts-ignore
-  async onCompleted(payment, oldPayment, user = "system") {
+  _getRepo(qr, entityClass) {
+    if (qr) return qr.manager.getRepository(entityClass);
+    return this.dataSource.getRepository(entityClass);
+  }
+
+  async onCompleted(payment, oldPayment, user = "system", qr = null) {
     logger.info(`[PaymentTransition] Payment #${payment.id} completed, old status: ${oldPayment?.status}`);
-    await this._logHistory(payment, oldPayment, "completed", user);
-    // placeholder: could reduce worker's debts
+    await this._logHistory(payment, oldPayment, "completed", user, qr);
   }
 
-  // @ts-ignore
-  async onCancelled(payment, oldPayment, user = "system") {
+  async onCancelled(payment, oldPayment, user = "system", qr = null) {
     logger.info(`[PaymentTransition] Payment #${payment.id} cancelled, old status: ${oldPayment?.status}`);
-    await this._logHistory(payment, oldPayment, "cancelled", user);
+    await this._logHistory(payment, oldPayment, "cancelled", user, qr);
   }
 
-  // @ts-ignore
-  async onPartiallyPaid(payment, oldPayment, user = "system") {
+  async onPartiallyPaid(payment, oldPayment, user = "system", qr = null) {
     logger.info(`[PaymentTransition] Payment #${payment.id} partially paid, old status: ${oldPayment?.status}`);
-    await this._logHistory(payment, oldPayment, "partially_paid", user);
+    await this._logHistory(payment, oldPayment, "partially_paid", user, qr);
   }
 
-  // --- Private helpers ---
-
-  // @ts-ignore
-  async _logHistory(payment, oldPayment, actionType, user) {
-    const historyRepo = AppDataSource.getRepository(PaymentHistory);
-
-    // Determine which field changed (status)
-    const changedField = "status";
+  async _logHistory(payment, oldPayment, actionType, user, qr) {
+    const PaymentHistory = require("../entities/PaymentHistory");
+    const historyRepo = this._getRepo(qr, PaymentHistory);
     const oldValue = oldPayment?.status || null;
     const newValue = payment.status;
 
-    // For financial changes, we could also track amount changes, but status change may not affect amounts.
-    // If needed, we can add oldAmount/newAmount later.
-
     const history = historyRepo.create({
-      // @ts-ignore
-      payment: payment,
-      actionType, // e.g., "processing", "completed"
-      changedField,
+      payment,
+      actionType,
+      changedField: "status",
       oldValue,
       newValue,
-      oldAmount: null, // no amount change
+      oldAmount: null,
       newAmount: null,
       notes: `Status changed from ${oldValue} to ${newValue}`,
       performedBy: user,
       referenceNumber: payment.referenceNumber,
+      createdAt: new Date(),
     });
 
-    // @ts-ignore
-    await saveDb(historyRepo, history);
-    // @ts-ignore
+    await saveDb(historyRepo, history, { queryRunner: qr });
     await auditLogger.logCreate("PaymentHistory", history.id, history, user);
     logger.info(`[PaymentTransition] PaymentHistory #${history.id} created for payment #${payment.id}`);
   }

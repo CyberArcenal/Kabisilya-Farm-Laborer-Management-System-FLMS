@@ -27,6 +27,7 @@ const Assignment = new EntitySchema({
     },
     notes: { type: String, nullable: true },
     createdAt: { type: Date, createDate: true },
+      deletedAt: { type: Date, nullable: true },
     updatedAt: { type: Date, updateDate: true },
   },
   relations: {

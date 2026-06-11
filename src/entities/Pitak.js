@@ -43,6 +43,7 @@ const Pitak = new EntitySchema({
     },
 
     createdAt: { type: Date, createDate: true },
+      deletedAt: { type: Date, nullable: true },
     updatedAt: { type: Date, updateDate: true },
   },
   relations: {

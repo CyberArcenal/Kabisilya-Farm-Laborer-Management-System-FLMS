@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { useFarmManagementSettings } from "./hooks/useFarmManagementSettings";
 import { SessionSettings } from "./components/farm-settings/SessionSettings";
-import systemConfigAPI from "../../api/core/system_config";
+import systemConfigAPI from "../../api/utils/system_config";
 import { PitakSettings } from "./components/farm-settings/PitakSettings";
 import { AssignmentSettings } from "./components/farm-settings/AssignmentSettings";
 import { PaymentSettings } from "./components/farm-settings/PaymentSettings";

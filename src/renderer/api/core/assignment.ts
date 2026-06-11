@@ -1,12 +1,13 @@
 // src/renderer/api/assignmentAPI.ts
-// @ts-check
+// Updated to use common pagination types
 
+import type { ApiResponse, BaseFilters, PaginatedResponse } from "../shared";
 import type { Pitak } from "./pitak";
 import type { Session } from "./session";
 import type { Worker } from "./worker";
 
 // ----------------------------------------------------------------------
-// 📦 Types (aligned with backend response)
+// 📦 Assignment-specific Types
 // ----------------------------------------------------------------------
 
 export interface Assignment {
@@ -17,22 +18,15 @@ export interface Assignment {
   notes?: string | null;
   createdAt: string;
   updatedAt: string;
+  deletedAt?: string | null;
   worker?: Worker;
   pitak?: Pitak;
   session: Session;
 }
 
-export interface AssignmentResponse {
-  status: boolean;
-  message: string;
-  data: Assignment;
-}
-
-export interface AssignmentsResponse {
-  status: boolean;
-  message: string;
-  data: Assignment[];
-}
+export type AssignmentResponse = ApiResponse<Assignment>;
+export type AssignmentsResponse = ApiResponse<PaginatedResponse<Assignment>>;
+export type AssignmentStatsResponse = ApiResponse<AssignmentStats>;
 
 export interface AssignmentStats {
   totalAssignments: number;
@@ -40,27 +34,17 @@ export interface AssignmentStats {
   totalLuwang: number;
 }
 
-export interface AssignmentStatsResponse {
-  status: boolean;
-  message: string;
-  data: AssignmentStats;
-}
-
-export interface AssignmentFilters {
+export interface AssignmentFilters extends BaseFilters {
   workerId?: number;
   pitakId?: number;
   sessionId?: number;
   status?: string;
   startDate?: string;
   endDate?: string;
-  page?: number;
-  limit?: number;
-  sortBy?: string;
-  sortOrder?: "ASC" | "DESC";
 }
 
 // ----------------------------------------------------------------------
-// 🧠 AssignmentAPI Class
+// 🧠 AssignmentAPI Class (using common types)
 // ----------------------------------------------------------------------
 
 class AssignmentAPI {
@@ -76,10 +60,10 @@ class AssignmentAPI {
     return window.backendAPI.assignment({ method, params });
   }
 
-  // 🔎 READ
+  // 🔎 READ (with pagination)
 
   /**
-   * Get all assignments with optional filters
+   * Get all assignments with optional filters (paginated)
    */
   async getAll(params?: AssignmentFilters): Promise<AssignmentsResponse> {
     try {
@@ -112,31 +96,31 @@ class AssignmentAPI {
   }
 
   /**
-   * Get assignments by worker ID
+   * Get assignments by worker ID (paginated)
    */
   async getByWorker(
     workerId: number,
-    params?: Omit<Parameters<AssignmentAPI["getAll"]>[0], "workerId">,
+    params?: Omit<AssignmentFilters, "workerId">,
   ): Promise<AssignmentsResponse> {
     return this.getAll({ ...params, workerId });
   }
 
   /**
-   * Get assignments by pitak ID
+   * Get assignments by pitak ID (paginated)
    */
   async getByPitak(
     pitakId: number,
-    params?: Omit<Parameters<AssignmentAPI["getAll"]>[0], "pitakId">,
+    params?: Omit<AssignmentFilters, "pitakId">,
   ): Promise<AssignmentsResponse> {
     return this.getAll({ ...params, pitakId });
   }
 
   /**
-   * Get assignments by session ID
+   * Get assignments by session ID (paginated)
    */
   async getBySession(
     sessionId: number,
-    params?: Omit<Parameters<AssignmentAPI["getAll"]>[0], "sessionId">,
+    params?: Omit<AssignmentFilters, "sessionId">,
   ): Promise<AssignmentsResponse> {
     return this.getAll({ ...params, sessionId });
   }
@@ -206,7 +190,6 @@ class AssignmentAPI {
 
   /**
    * Update an existing assignment
-   * All fields are optional; only provided fields will be updated.
    */
   async update(
     id: number,
@@ -235,8 +218,6 @@ class AssignmentAPI {
 
   /**
    * Update assignment status
-   * @param id - Assignment ID
-   * @param status - New status ('active', 'completed', 'cancelled')
    */
   async updateStatus(id: number, status: string): Promise<AssignmentResponse> {
     try {
@@ -253,8 +234,7 @@ class AssignmentAPI {
   }
 
   /**
-   * Delete (cancel) an assignment
-   * This sets the status to 'cancelled'.
+   * Soft delete (cancel) an assignment
    */
   async delete(id: number): Promise<AssignmentResponse> {
     try {
@@ -266,6 +246,22 @@ class AssignmentAPI {
       throw new Error(response.message || "Failed to delete assignment");
     } catch (error: any) {
       throw new Error(error.message || "Failed to delete assignment");
+    }
+  }
+
+  /**
+   * Restore a soft-deleted assignment
+   */
+  async restore(id: number): Promise<AssignmentResponse> {
+    try {
+      if (!id || id <= 0) throw new Error("Invalid ID");
+      const response = await this.call<AssignmentResponse>("restoreAssignment", {
+        id,
+      });
+      if (response.status) return response;
+      throw new Error(response.message || "Failed to restore assignment");
+    } catch (error: any) {
+      throw new Error(error.message || "Failed to restore assignment");
     }
   }
 }

@@ -1,111 +1,61 @@
 // src/subscribers/SessionSubscriber.js
-// @ts-check
 const Session = require("../entities/Session");
-
+const { SessionStateTransitionService } = require("../stateTransitionService/Session");
 const { logger } = require("../utils/logger");
 
 console.log("[Subscriber] Loading SessionSubscriber");
 
 class SessionSubscriber {
-  constructor() {
-    this.transitionService = null;
+  constructor(dataSource) {
+    this.dataSource = dataSource;
+    this.transitionService = new SessionStateTransitionService(dataSource);
   }
 
   listenTo() {
     return Session;
   }
 
-  /**
-   * @param {any} entity
-   */
-  async afterInsert(entity) {
+  async afterInsert(entity, { manager, queryRunner }) {
     try {
-      // @ts-ignore
-      logger.info("[SessionSubscriber] afterInsert", {
-        entity: JSON.parse(JSON.stringify(entity)),
-      });
-      // Optional: call onInitiated if you want
+      logger.info("[SessionSubscriber] afterInsert", { id: entity.id });
     } catch (err) {
-      // @ts-ignore
       logger.error("[SessionSubscriber] afterInsert error", err);
     }
   }
 
-  /**
-   * @param {{ entity: any; databaseEntity: any; }} event
-   */
-  async afterUpdate(event) {
-    if (!event.entity) return;
-    const { AppDataSource } = require("../main/db/datasource");
-    const {
-      SessionStateTransitionService,
-    } = require("../stateTransitionService/Session");
-    this.transitionService = new SessionStateTransitionService(AppDataSource);
+  async afterUpdate(event, { manager, queryRunner }) {
+    const { databaseEntity, entity } = event;
+    if (!entity) return;
+    logger.info("[SessionSubscriber] afterUpdate", { id: entity.id, oldStatus: databaseEntity?.status, newStatus: entity.status });
 
-    // @ts-ignore
-    logger.info("[SessionSubscriber] afterUpdate", {
-      entity: JSON.parse(JSON.stringify(event.entity)),
-    });
+    if (databaseEntity && databaseEntity.status === entity.status) return;
 
-    const oldSession = event.databaseEntity;
-    const newSession = event.entity;
-
-    // If status didn't change, skip
-    if (oldSession && oldSession.status === newSession.status) {
-      return;
-    }
-
-    // Hydrate session with needed relations
-    const hydrated = await this._hydrateSession(newSession.id);
+    const hydrated = await this._hydrateSession(entity.id, queryRunner);
     if (!hydrated) return;
 
-    switch (newSession.status) {
+    switch (entity.status) {
       case "active":
-        await this.transitionService.onActivate(
-          hydrated,
-          oldSession?.status,
-          // @ts-ignore
-          "system",
-        );
+        await this.transitionService.onActivate(hydrated, databaseEntity?.status, "system", queryRunner);
         break;
       case "closed":
-        await this.transitionService.onClose(
-          hydrated,
-          oldSession?.status,
-          // @ts-ignore
-          "system",
-        );
+        await this.transitionService.onClose(hydrated, databaseEntity?.status, "system", queryRunner);
         break;
       case "archived":
-        await this.transitionService.onArchive(
-          hydrated,
-          oldSession?.status,
-          // @ts-ignore
-          "system",
-        );
+        await this.transitionService.onArchive(hydrated, databaseEntity?.status, "system", queryRunner);
         break;
       default:
-        logger.warn(
-          `[SessionSubscriber] Unhandled status transition: ${oldSession?.status} -> ${newSession.status}`,
-        );
+        logger.warn(`[SessionSubscriber] Unhandled status: ${entity.status}`);
     }
   }
 
-  /**
-   * @param {any} sessionId
-   */
-  async _hydrateSession(sessionId) {
-     const { AppDataSource } = require("../main/db/datasource");
-    const sessionRepo = AppDataSource.getRepository(Session);
+  async _hydrateSession(sessionId, queryRunner) {
+    const sessionRepo = queryRunner ? queryRunner.manager.getRepository(Session) : this.dataSource.getRepository(Session);
     const session = await sessionRepo.findOne({
       where: { id: sessionId },
-      // Add relations if needed for future logic (e.g., bukids, assignments)
       relations: [],
     });
     if (!session) {
-      logger.error(
-        `[SessionSubscriber] Session #${sessionId} not found for hydration`,
-      );
+      logger.error(`[SessionSubscriber] Session #${sessionId} not found`);
       return null;
     }
     return session;

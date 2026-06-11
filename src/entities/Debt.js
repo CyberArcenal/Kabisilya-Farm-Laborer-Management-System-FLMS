@@ -54,6 +54,7 @@ const Debt = new EntitySchema({
     },
     lastPaymentDate: { type: Date, nullable: true },
     createdAt: { type: Date, createDate: true },
+      deletedAt: { type: Date, nullable: true },
     updatedAt: { type: Date, updateDate: true },
   },
   relations: {

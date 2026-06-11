@@ -1,94 +1,55 @@
 // src/subscribers/PaymentSubscriber.js
-// @ts-check
 const Payment = require("../entities/Payment");
-
+const { PaymentStateTransitionService } = require("../stateTransitionService/Payment");
 const { logger } = require("../utils/logger");
 
 console.log("[Subscriber] Loading PaymentSubscriber");
 
 class PaymentSubscriber {
-  constructor() {
-    this.transitionService = null;
+  constructor(dataSource) {
+    this.dataSource = dataSource;
+    this.transitionService = new PaymentStateTransitionService(dataSource);
   }
 
   listenTo() {
     return Payment;
   }
 
-  /**
-   * @param {any} entity
-   */
-  async afterInsert(entity) {
+  async afterInsert(entity, { manager, queryRunner }) {
     try {
-      // @ts-ignore
-      logger.info("[PaymentSubscriber] afterInsert", {
-        entity: JSON.parse(JSON.stringify(entity)),
-      });
+      logger.info("[PaymentSubscriber] afterInsert", { id: entity.id });
     } catch (err) {
-      // @ts-ignore
       logger.error("[PaymentSubscriber] afterInsert error", err);
     }
   }
 
-  /**
-   * @param {{ entity: any; databaseEntity: any; }} event
-   */
-  async afterUpdate(event) {
-    if (!event.entity) return;
-    const { AppDataSource } = require("../main/db/datasource");
-    const {
-      PaymentStateTransitionService,
-    } = require("../stateTransitionService/Payment");
-    this.transitionService = new PaymentStateTransitionService(AppDataSource);
+  async afterUpdate(event, { manager, queryRunner }) {
+    const { databaseEntity, entity } = event;
+    if (!entity) return;
+    logger.info("[PaymentSubscriber] afterUpdate", { id: entity.id, oldStatus: databaseEntity?.status, newStatus: entity.status });
 
-    // @ts-ignore
-    logger.info("[PaymentSubscriber] afterUpdate", {
-      entity: JSON.parse(JSON.stringify(event.entity)),
-    });
+    if (databaseEntity && databaseEntity.status === entity.status) return;
 
-    const oldPayment = event.databaseEntity;
-    const newPayment = event.entity;
-
-    if (oldPayment && oldPayment.status === newPayment.status) return;
-
-    const hydrated = await this._hydratePayment(newPayment.id);
+    const hydrated = await this._hydratePayment(entity.id, queryRunner);
     if (!hydrated) return;
 
-    switch (newPayment.status) {
+    switch (entity.status) {
       case "completed":
-        await this.transitionService.onCompleted(
-          hydrated,
-          oldPayment,
-          "system",
-        );
+        await this.transitionService.onCompleted(hydrated, databaseEntity, "system", queryRunner);
         break;
       case "cancelled":
-        await this.transitionService.onCancelled(
-          hydrated,
-          oldPayment,
-          "system",
-        );
+        await this.transitionService.onCancelled(hydrated, databaseEntity, "system", queryRunner);
         break;
       case "partially_paid":
-        await this.transitionService.onPartiallyPaid(
-          hydrated,
-          oldPayment,
-          "system",
-        );
+        await this.transitionService.onPartiallyPaid(hydrated, databaseEntity, "system", queryRunner);
         break;
       default:
-        logger.warn(
-          `[PaymentSubscriber] Unhandled status: ${newPayment.status}`,
-        );
+        logger.warn(`[PaymentSubscriber] Unhandled status: ${entity.status}`);
     }
   }
 
-  /**
-   * @param {any} paymentId
-   */
-  async _hydratePayment(paymentId) {
-    const { AppDataSource } = require("../main/db/datasource");
-    const paymentRepo = AppDataSource.getRepository(Payment);
+  async _hydratePayment(paymentId, queryRunner) {
+    const paymentRepo = queryRunner ? queryRunner.manager.getRepository(Payment) : this.dataSource.getRepository(Payment);
     const payment = await paymentRepo.findOne({
       where: { id: paymentId },
       relations: ["worker", "pitak", "session", "assignment"],

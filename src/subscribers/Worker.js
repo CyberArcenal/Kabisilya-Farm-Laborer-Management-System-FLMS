@@ -1,104 +1,60 @@
 // src/subscribers/WorkerSubscriber.js
-// @ts-check
 const Worker = require("../entities/Worker");
-const { AppDataSource } = require("../main/db/datasource");
-const {
-  WorkerStateTransitionService,
-} = require("../stateTransitionService/Worker");
+const { WorkerStateTransitionService } = require("../stateTransitionService/Worker");
 const { logger } = require("../utils/logger");
 
 console.log("[Subscriber] Loading WorkerSubscriber");
 
 class WorkerSubscriber {
-  constructor() {
-    this.transitionService = new WorkerStateTransitionService(AppDataSource);
+  constructor(dataSource) {
+    this.dataSource = dataSource;
+    this.transitionService = new WorkerStateTransitionService(dataSource);
   }
 
   listenTo() {
     return Worker;
   }
 
-
-  /**
-   * @param {any} entity
-   */
-  async afterInsert(entity) {
+  async afterInsert(entity, { manager, queryRunner }) {
     try {
-      // @ts-ignore
-      logger.info("[WorkerSubscriber] afterInsert", {
-        entity: JSON.parse(JSON.stringify(entity)),
-      });
+      logger.info("[WorkerSubscriber] afterInsert", { id: entity.id });
     } catch (err) {
-      // @ts-ignore
       logger.error("[WorkerSubscriber] afterInsert error", err);
     }
   }
 
-  /**
-   * @param {{ entity: any; databaseEntity: any; }} event
-   */
-  async afterUpdate(event) {
-    if (!event.entity) return;
+  async afterUpdate(event, { manager, queryRunner }) {
+    const { databaseEntity, entity } = event;
+    if (!entity) return;
+    logger.info("[WorkerSubscriber] afterUpdate", { id: entity.id, oldStatus: databaseEntity?.status, newStatus: entity.status });
 
-    // @ts-ignore
-    logger.info("[WorkerSubscriber] afterUpdate", {
-      entity: JSON.parse(JSON.stringify(event.entity)),
-    });
+    if (databaseEntity && databaseEntity.status === entity.status) return;
 
-    const oldWorker = event.databaseEntity;
-    const newWorker = event.entity;
-
-    if (oldWorker && oldWorker.status === newWorker.status) return;
-
-    const hydrated = await this._hydrateWorker(newWorker.id);
+    const hydrated = await this._hydrateWorker(entity.id, queryRunner);
     if (!hydrated) return;
 
-    switch (newWorker.status) {
+    switch (entity.status) {
       case "active":
-        await this.transitionService.onActivate(
-          hydrated,
-          oldWorker?.status,
-          // @ts-ignore
-          "system",
-        );
+        await this.transitionService.onActivate(hydrated, databaseEntity?.status, "system", queryRunner);
         break;
       case "inactive":
-        await this.transitionService.onInactivate(
-          hydrated,
-          oldWorker?.status,
-          // @ts-ignore
-          "system",
-        );
+        await this.transitionService.onInactivate(hydrated, databaseEntity?.status, "system", queryRunner);
         break;
       case "on-leave":
-        await this.transitionService.onLeave(
-          hydrated,
-          oldWorker?.status,
-          // @ts-ignore
-          "system",
-        );
+        await this.transitionService.onLeave(hydrated, databaseEntity?.status, "system", queryRunner);
         break;
       case "terminated":
-        await this.transitionService.onTerminate(
-          hydrated,
-          oldWorker?.status,
-          // @ts-ignore
-          "system",
-        );
+        await this.transitionService.onTerminate(hydrated, databaseEntity?.status, "system", queryRunner);
         break;
       default:
-        logger.warn(`[WorkerSubscriber] Unhandled status: ${newWorker.status}`);
+        logger.warn(`[WorkerSubscriber] Unhandled status: ${entity.status}`);
     }
   }
 
-  /**
-   * @param {any} workerId
-   */
-  async _hydrateWorker(workerId) {
-    const workerRepo = AppDataSource.getRepository(Worker);
+  async _hydrateWorker(workerId, queryRunner) {
+    const workerRepo = queryRunner ? queryRunner.manager.getRepository(Worker) : this.dataSource.getRepository(Worker);
     const worker = await workerRepo.findOne({
       where: { id: workerId },
-      // relations needed for effects (e.g., assignments, debts)
       relations: ["assignments", "debts"],
     });
     if (!worker) {

@@ -6,11 +6,20 @@ const { logger } = require("../../../../../utils/logger");
 module.exports = async function getWorkersByStatus(params) {
   try {
     logger.info("IPC: getWorkersByStatus", { params });
-    if (!params.status) return { status: false, message: "Missing status", data: null };
-    const workers = await workerService.findAll({ ...params, status: params.status });
-    return { status: true, message: "Workers retrieved", data: workers };
+    if (!params.status)
+      return { status: false, message: "Missing status", data: null };
+    const workers = await workerService.findAll({
+      ...params,
+      status: params.status,
+    });
+    return { status: true, message: "Workers retrieved", data: workers.data, pagination: workers.pagination };
   } catch (error) {
     logger.error("IPC: getWorkersByStatus error:", error);
-    return { status: false, message: error.message || "Failed to retrieve workers", data: null };
+    return {
+      status: false,
+      message: error.message || "Failed to retrieve workers",
+      pagination: null,
+      data: null,
+    };
   }
 };

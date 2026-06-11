@@ -1,0 +1,246 @@
+/**
+ * @typedef {import('typeorm').MigrationInterface} MigrationInterface
+ * @typedef {import('typeorm').QueryRunner} QueryRunner
+ */
+
+/**
+ * @class
+ * @implements {MigrationInterface}
+ */
+module.exports = class InitSchema1781173023771 {
+    name = 'InitSchema1781173023771'
+
+    /**
+     * @param {QueryRunner} queryRunner
+     */
+    async up(queryRunner) {
+        await queryRunner.query(`CREATE TABLE "sessions" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "name" varchar NOT NULL, "notes" varchar, "seasonType" varchar, "year" integer NOT NULL, "startDate" datetime NOT NULL, "endDate" datetime, "status" varchar CHECK( "status" IN ('active','closed','archived') ) NOT NULL DEFAULT ('active'), "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime)`);
+        await queryRunner.query(`CREATE TABLE "assignments" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "luwangCount" decimal(5,2) NOT NULL DEFAULT (0), "assignmentDate" datetime NOT NULL, "status" varchar CHECK( "status" IN ('initiated','active','completed','cancelled') ) NOT NULL DEFAULT ('active'), "notes" varchar, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "workerId" integer, "pitakId" integer, "sessionId" integer NOT NULL, CONSTRAINT "UQ_WORKER_PITAK_SESSION" UNIQUE ("workerId", "pitakId", "sessionId"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_ASSIGNMENT_DATE" ON "assignments" ("assignmentDate") `);
+        await queryRunner.query(`CREATE INDEX "IDX_ASSIGNMENT_STATUS" ON "assignments" ("status") `);
+        await queryRunner.query(`CREATE TABLE "audit_logs" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "action" varchar NOT NULL, "entity" varchar NOT NULL, "entityId" integer, "timestamp" datetime NOT NULL DEFAULT (datetime('now')), "description" varchar, "newData" varchar, "previousData" varchar)`);
+        await queryRunner.query(`CREATE TABLE "bukids" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "name" varchar NOT NULL, "status" varchar CHECK( "status" IN ('initiated','active','completed','cancelled') ) NOT NULL DEFAULT ('active'), "notes" varchar, "location" varchar, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "sessionId" integer)`);
+        await queryRunner.query(`CREATE TABLE "debts" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "originalAmount" decimal(10,2) NOT NULL DEFAULT (0), "amount" decimal(10,2) NOT NULL DEFAULT (0), "reason" varchar, "balance" decimal(10,2) NOT NULL DEFAULT (0), "status" varchar CHECK( "status" IN ('pending','partially_paid','paid','cancelled','overdue','settled') ) NOT NULL DEFAULT ('pending'), "dateIncurred" datetime NOT NULL DEFAULT (datetime('now')), "dueDate" datetime, "paymentTerm" varchar, "interestRate" decimal(5,2) NOT NULL DEFAULT (0), "totalInterest" decimal(10,2) NOT NULL DEFAULT (0), "totalPaid" decimal(10,2) NOT NULL DEFAULT (0), "lastPaymentDate" datetime, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "workerId" integer, "sessionId" integer NOT NULL)`);
+        await queryRunner.query(`CREATE INDEX "IDX_DEBT_STATUS" ON "debts" ("status") `);
+        await queryRunner.query(`CREATE INDEX "IDX_DEBT_DUE_DATE" ON "debts" ("dueDate") `);
+        await queryRunner.query(`CREATE INDEX "IDX_DEBT_WORKER" ON "debts" ("workerId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_DEBT_SESSION" ON "debts" ("sessionId") `);
+        await queryRunner.query(`CREATE TABLE "debt_histories" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "amountPaid" decimal(10,2) NOT NULL DEFAULT (0), "previousBalance" decimal(10,2) NOT NULL DEFAULT (0), "newBalance" decimal(10,2) NOT NULL DEFAULT (0), "transactionType" varchar NOT NULL DEFAULT ('payment'), "paymentMethod" varchar, "referenceNumber" varchar, "notes" varchar, "transactionDate" datetime NOT NULL DEFAULT (datetime('now')), "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "debtId" integer, "paymentId" integer)`);
+        await queryRunner.query(`CREATE INDEX "IDX_DEBT_HISTORY_DATE" ON "debt_histories" ("transactionDate") `);
+        await queryRunner.query(`CREATE INDEX "IDX_DEBT_HISTORY_TYPE" ON "debt_histories" ("transactionType") `);
+        await queryRunner.query(`CREATE TABLE "license_cache" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "license_key" text, "license_type" text NOT NULL, "status" text NOT NULL, "expires_at" datetime, "activated_at" datetime, "days_remaining" integer, "features" text DEFAULT ('[]'), "limits" text DEFAULT ('{}'), "usage" text DEFAULT ('{}'), "max_devices" integer NOT NULL DEFAULT (1), "current_devices" integer NOT NULL DEFAULT (0), "last_sync" datetime, "next_sync_due" datetime, "sync_interval_days" integer NOT NULL DEFAULT (30), "device_id" text, "activated_on_device" datetime, "server_response" text, "activation_id" text, "grace_period_days" integer NOT NULL DEFAULT (7), "server_timestamp" datetime, "offline_activation" boolean NOT NULL DEFAULT (0), "trial_consumed" boolean NOT NULL DEFAULT (0), "last_deactivated" datetime, "created_at" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), "updated_at" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), CONSTRAINT "UQ_e5240a5d083ab00fd7210838f5d" UNIQUE ("license_key"))`);
+        await queryRunner.query(`CREATE INDEX "idx_license_key" ON "license_cache" ("license_key") `);
+        await queryRunner.query(`CREATE INDEX "idx_expires_at" ON "license_cache" ("expires_at") `);
+        await queryRunner.query(`CREATE INDEX "idx_next_sync" ON "license_cache" ("next_sync_due") `);
+        await queryRunner.query(`CREATE INDEX "idx_license_status_expires" ON "license_cache" ("status", "expires_at") `);
+        await queryRunner.query(`CREATE TABLE "notifications" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "userId" integer, "title" varchar(255) NOT NULL, "message" text NOT NULL, "type" varchar CHECK( "type" IN ('info','success','warning','error','purchase','sale') ) NOT NULL DEFAULT ('info'), "isRead" boolean NOT NULL DEFAULT (0), "metadata" text, "createdAt" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), "deletedAt" datetime, "updatedAt" datetime DEFAULT (datetime('now')))`);
+        await queryRunner.query(`CREATE INDEX "idx_notifications_user_read" ON "notifications" ("userId", "isRead") `);
+        await queryRunner.query(`CREATE INDEX "idx_notifications_created" ON "notifications" ("createdAt") `);
+        await queryRunner.query(`CREATE TABLE "notification_logs" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "recipient_email" varchar NOT NULL, "subject" varchar, "payload" text, "status" varchar(20) NOT NULL DEFAULT ('queued'), "error_message" text, "retry_count" integer NOT NULL DEFAULT (0), "resend_count" integer NOT NULL DEFAULT (0), "sent_at" datetime, "last_error_at" datetime, "created_at" datetime NOT NULL DEFAULT (datetime('now')), "updated_at" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime)`);
+        await queryRunner.query(`CREATE INDEX "IDX_notification_status" ON "notification_logs" ("status") `);
+        await queryRunner.query(`CREATE INDEX "IDX_notification_recipient" ON "notification_logs" ("recipient_email") `);
+        await queryRunner.query(`CREATE INDEX "IDX_notification_status_created" ON "notification_logs" ("status", "created_at") `);
+        await queryRunner.query(`CREATE TABLE "payments" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "grossPay" decimal(10,2) NOT NULL DEFAULT (0), "manualDeduction" decimal(10,2) DEFAULT (0), "netPay" decimal(10,2) NOT NULL DEFAULT (0), "status" varchar CHECK( "status" IN ('pending','partially_paid','completed','cancelled') ) NOT NULL DEFAULT ('pending'), "paymentDate" datetime, "paymentMethod" varchar, "referenceNumber" varchar, "periodStart" datetime, "periodEnd" datetime, "totalDebtDeduction" decimal(10,2) NOT NULL DEFAULT (0), "otherDeductions" decimal(10,2) NOT NULL DEFAULT (0), "deductionBreakdown" json, "notes" varchar, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "idempotencyKey" varchar, "workerId" integer, "pitakId" integer, "sessionId" integer NOT NULL, "assignmentId" integer)`);
+        await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_STATUS" ON "payments" ("status") `);
+        await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_DATE" ON "payments" ("paymentDate") `);
+        await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_WORKER" ON "payments" ("workerId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_SESSION" ON "payments" ("sessionId") `);
+        await queryRunner.query(`CREATE UNIQUE INDEX "UX_PAYMENTS_PITAK_WORKER_SESSION" ON "payments" ("pitakId", "workerId", "sessionId") `);
+        await queryRunner.query(`CREATE UNIQUE INDEX "UX_PAYMENTS_ASSIGNMENT" ON "payments" ("assignmentId") `);
+        await queryRunner.query(`CREATE UNIQUE INDEX "UX_PAYMENTS_IDEMPOTENCY_KEY" ON "payments" ("idempotencyKey") `);
+        await queryRunner.query(`CREATE TABLE "payment_histories" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "actionType" varchar NOT NULL DEFAULT ('update'), "changedField" varchar NOT NULL, "oldValue" varchar, "newValue" varchar, "oldAmount" decimal(10,2) DEFAULT (0), "newAmount" decimal(10,2) DEFAULT (0), "notes" varchar, "performedBy" varchar, "changeDate" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "referenceNumber" varchar, "paymentId" integer)`);
+        await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_HISTORY_ACTION" ON "payment_histories" ("actionType") `);
+        await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_HISTORY_DATE" ON "payment_histories" ("changeDate") `);
+        await queryRunner.query(`CREATE TABLE "pitaks" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "location" varchar, "totalLuwang" decimal(7,2) NOT NULL DEFAULT (0), "layoutType" varchar NOT NULL DEFAULT ('square'), "sideLengths" text, "areaSqm" decimal(10,2) NOT NULL DEFAULT (0), "notes" varchar, "status" varchar CHECK( "status" IN ('active','completed','cancelled') ) NOT NULL DEFAULT ('active'), "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "bukidId" integer, CONSTRAINT "UQ_BUKID_LOCATION" UNIQUE ("bukidId", "location"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_PITAK_STATUS" ON "pitaks" ("status") `);
+        await queryRunner.query(`CREATE INDEX "IDX_PITAK_LOCATION" ON "pitaks" ("location") `);
+        await queryRunner.query(`CREATE TABLE "workers" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "name" varchar NOT NULL, "contact" varchar, "email" varchar, "address" varchar, "status" varchar CHECK( "status" IN ('active','inactive','on-leave','terminated') ) NOT NULL DEFAULT ('active'), "hireDate" datetime, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), CONSTRAINT "UQ_87f2092ffaae628ef63547d2442" UNIQUE ("email"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_WORKER_STATUS" ON "workers" ("status") `);
+        await queryRunner.query(`CREATE INDEX "IDX_WORKER_NAME" ON "workers" ("name") `);
+        await queryRunner.query(`CREATE TABLE "system_settings" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "key" varchar(100) NOT NULL, "value" text NOT NULL, "setting_type" varchar CHECK( "setting_type" IN ('general','notification','farm_session','farm_bukid','farm_pitak','farm_assignment','farm_payment','farm_debt','farm_audit') ) NOT NULL, "description" text, "is_public" boolean NOT NULL DEFAULT (0), "is_deleted" boolean NOT NULL DEFAULT (0), "created_at" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), "updated_at" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), "deletedAt" datetime)`);
+        await queryRunner.query(`CREATE UNIQUE INDEX "idx_system_settings_type_key" ON "system_settings" ("setting_type", "key") `);
+        await queryRunner.query(`DROP INDEX "IDX_ASSIGNMENT_DATE"`);
+        await queryRunner.query(`DROP INDEX "IDX_ASSIGNMENT_STATUS"`);
+        await queryRunner.query(`CREATE TABLE "temporary_assignments" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "luwangCount" decimal(5,2) NOT NULL DEFAULT (0), "assignmentDate" datetime NOT NULL, "status" varchar CHECK( "status" IN ('initiated','active','completed','cancelled') ) NOT NULL DEFAULT ('active'), "notes" varchar, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "workerId" integer, "pitakId" integer, "sessionId" integer NOT NULL, CONSTRAINT "UQ_WORKER_PITAK_SESSION" UNIQUE ("workerId", "pitakId", "sessionId"), CONSTRAINT "FK_e5efb819bcd3373785eede6493a" FOREIGN KEY ("workerId") REFERENCES "workers" ("id") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT "FK_d0383781e2fa2e0b675e3f23446" FOREIGN KEY ("pitakId") REFERENCES "pitaks" ("id") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT "FK_11bdbd10e3a85d51c380340344c" FOREIGN KEY ("sessionId") REFERENCES "sessions" ("id") ON DELETE CASCADE ON UPDATE NO ACTION)`);
+        await queryRunner.query(`INSERT INTO "temporary_assignments"("id", "luwangCount", "assignmentDate", "status", "notes", "createdAt", "deletedAt", "updatedAt", "workerId", "pitakId", "sessionId") SELECT "id", "luwangCount", "assignmentDate", "status", "notes", "createdAt", "deletedAt", "updatedAt", "workerId", "pitakId", "sessionId" FROM "assignments"`);
+        await queryRunner.query(`DROP TABLE "assignments"`);
+        await queryRunner.query(`ALTER TABLE "temporary_assignments" RENAME TO "assignments"`);
+        await queryRunner.query(`CREATE INDEX "IDX_ASSIGNMENT_DATE" ON "assignments" ("assignmentDate") `);
+        await queryRunner.query(`CREATE INDEX "IDX_ASSIGNMENT_STATUS" ON "assignments" ("status") `);
+        await queryRunner.query(`CREATE TABLE "temporary_bukids" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "name" varchar NOT NULL, "status" varchar CHECK( "status" IN ('initiated','active','completed','cancelled') ) NOT NULL DEFAULT ('active'), "notes" varchar, "location" varchar, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "sessionId" integer, CONSTRAINT "FK_70b48b86b0daf745c9181d3d1a6" FOREIGN KEY ("sessionId") REFERENCES "sessions" ("id") ON DELETE CASCADE ON UPDATE NO ACTION)`);
+        await queryRunner.query(`INSERT INTO "temporary_bukids"("id", "name", "status", "notes", "location", "createdAt", "deletedAt", "updatedAt", "sessionId") SELECT "id", "name", "status", "notes", "location", "createdAt", "deletedAt", "updatedAt", "sessionId" FROM "bukids"`);
+        await queryRunner.query(`DROP TABLE "bukids"`);
+        await queryRunner.query(`ALTER TABLE "temporary_bukids" RENAME TO "bukids"`);
+        await queryRunner.query(`DROP INDEX "IDX_DEBT_STATUS"`);
+        await queryRunner.query(`DROP INDEX "IDX_DEBT_DUE_DATE"`);
+        await queryRunner.query(`DROP INDEX "IDX_DEBT_WORKER"`);
+        await queryRunner.query(`DROP INDEX "IDX_DEBT_SESSION"`);
+        await queryRunner.query(`CREATE TABLE "temporary_debts" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "originalAmount" decimal(10,2) NOT NULL DEFAULT (0), "amount" decimal(10,2) NOT NULL DEFAULT (0), "reason" varchar, "balance" decimal(10,2) NOT NULL DEFAULT (0), "status" varchar CHECK( "status" IN ('pending','partially_paid','paid','cancelled','overdue','settled') ) NOT NULL DEFAULT ('pending'), "dateIncurred" datetime NOT NULL DEFAULT (datetime('now')), "dueDate" datetime, "paymentTerm" varchar, "interestRate" decimal(5,2) NOT NULL DEFAULT (0), "totalInterest" decimal(10,2) NOT NULL DEFAULT (0), "totalPaid" decimal(10,2) NOT NULL DEFAULT (0), "lastPaymentDate" datetime, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "workerId" integer, "sessionId" integer NOT NULL, CONSTRAINT "FK_911db2b833aff4711b124e4cd91" FOREIGN KEY ("workerId") REFERENCES "workers" ("id") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT "FK_4c60ffbc7da02dbb731adb900e7" FOREIGN KEY ("sessionId") REFERENCES "sessions" ("id") ON DELETE CASCADE ON UPDATE NO ACTION)`);
+        await queryRunner.query(`INSERT INTO "temporary_debts"("id", "originalAmount", "amount", "reason", "balance", "status", "dateIncurred", "dueDate", "paymentTerm", "interestRate", "totalInterest", "totalPaid", "lastPaymentDate", "createdAt", "deletedAt", "updatedAt", "workerId", "sessionId") SELECT "id", "originalAmount", "amount", "reason", "balance", "status", "dateIncurred", "dueDate", "paymentTerm", "interestRate", "totalInterest", "totalPaid", "lastPaymentDate", "createdAt", "deletedAt", "updatedAt", "workerId", "sessionId" FROM "debts"`);
+        await queryRunner.query(`DROP TABLE "debts"`);
+        await queryRunner.query(`ALTER TABLE "temporary_debts" RENAME TO "debts"`);
+        await queryRunner.query(`CREATE INDEX "IDX_DEBT_STATUS" ON "debts" ("status") `);
+        await queryRunner.query(`CREATE INDEX "IDX_DEBT_DUE_DATE" ON "debts" ("dueDate") `);
+        await queryRunner.query(`CREATE INDEX "IDX_DEBT_WORKER" ON "debts" ("workerId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_DEBT_SESSION" ON "debts" ("sessionId") `);
+        await queryRunner.query(`DROP INDEX "IDX_DEBT_HISTORY_DATE"`);
+        await queryRunner.query(`DROP INDEX "IDX_DEBT_HISTORY_TYPE"`);
+        await queryRunner.query(`CREATE TABLE "temporary_debt_histories" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "amountPaid" decimal(10,2) NOT NULL DEFAULT (0), "previousBalance" decimal(10,2) NOT NULL DEFAULT (0), "newBalance" decimal(10,2) NOT NULL DEFAULT (0), "transactionType" varchar NOT NULL DEFAULT ('payment'), "paymentMethod" varchar, "referenceNumber" varchar, "notes" varchar, "transactionDate" datetime NOT NULL DEFAULT (datetime('now')), "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "debtId" integer, "paymentId" integer, CONSTRAINT "FK_b28e0e3c07469b9e12c2473adbb" FOREIGN KEY ("debtId") REFERENCES "debts" ("id") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT "FK_440a93746399a8f39f6879185e6" FOREIGN KEY ("paymentId") REFERENCES "payments" ("id") ON DELETE NO ACTION ON UPDATE NO ACTION)`);
+        await queryRunner.query(`INSERT INTO "temporary_debt_histories"("id", "amountPaid", "previousBalance", "newBalance", "transactionType", "paymentMethod", "referenceNumber", "notes", "transactionDate", "createdAt", "deletedAt", "debtId", "paymentId") SELECT "id", "amountPaid", "previousBalance", "newBalance", "transactionType", "paymentMethod", "referenceNumber", "notes", "transactionDate", "createdAt", "deletedAt", "debtId", "paymentId" FROM "debt_histories"`);
+        await queryRunner.query(`DROP TABLE "debt_histories"`);
+        await queryRunner.query(`ALTER TABLE "temporary_debt_histories" RENAME TO "debt_histories"`);
+        await queryRunner.query(`CREATE INDEX "IDX_DEBT_HISTORY_DATE" ON "debt_histories" ("transactionDate") `);
+        await queryRunner.query(`CREATE INDEX "IDX_DEBT_HISTORY_TYPE" ON "debt_histories" ("transactionType") `);
+        await queryRunner.query(`DROP INDEX "IDX_PAYMENT_STATUS"`);
+        await queryRunner.query(`DROP INDEX "IDX_PAYMENT_DATE"`);
+        await queryRunner.query(`DROP INDEX "IDX_PAYMENT_WORKER"`);
+        await queryRunner.query(`DROP INDEX "IDX_PAYMENT_SESSION"`);
+        await queryRunner.query(`DROP INDEX "UX_PAYMENTS_PITAK_WORKER_SESSION"`);
+        await queryRunner.query(`DROP INDEX "UX_PAYMENTS_ASSIGNMENT"`);
+        await queryRunner.query(`DROP INDEX "UX_PAYMENTS_IDEMPOTENCY_KEY"`);
+        await queryRunner.query(`CREATE TABLE "temporary_payments" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "grossPay" decimal(10,2) NOT NULL DEFAULT (0), "manualDeduction" decimal(10,2) DEFAULT (0), "netPay" decimal(10,2) NOT NULL DEFAULT (0), "status" varchar CHECK( "status" IN ('pending','partially_paid','completed','cancelled') ) NOT NULL DEFAULT ('pending'), "paymentDate" datetime, "paymentMethod" varchar, "referenceNumber" varchar, "periodStart" datetime, "periodEnd" datetime, "totalDebtDeduction" decimal(10,2) NOT NULL DEFAULT (0), "otherDeductions" decimal(10,2) NOT NULL DEFAULT (0), "deductionBreakdown" json, "notes" varchar, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "idempotencyKey" varchar, "workerId" integer, "pitakId" integer, "sessionId" integer NOT NULL, "assignmentId" integer, CONSTRAINT "FK_a03c9d5254fca3435262af9721c" FOREIGN KEY ("workerId") REFERENCES "workers" ("id") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT "FK_8bedf6595ab5a0ea80a6e008cff" FOREIGN KEY ("pitakId") REFERENCES "pitaks" ("id") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT "FK_c96a63d98681cc603f7300deeb5" FOREIGN KEY ("sessionId") REFERENCES "sessions" ("id") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT "FK_dd4f81603d259c9f00994f8bbec" FOREIGN KEY ("assignmentId") REFERENCES "assignments" ("id") ON DELETE SET NULL ON UPDATE NO ACTION)`);
+        await queryRunner.query(`INSERT INTO "temporary_payments"("id", "grossPay", "manualDeduction", "netPay", "status", "paymentDate", "paymentMethod", "referenceNumber", "periodStart", "periodEnd", "totalDebtDeduction", "otherDeductions", "deductionBreakdown", "notes", "createdAt", "deletedAt", "updatedAt", "idempotencyKey", "workerId", "pitakId", "sessionId", "assignmentId") SELECT "id", "grossPay", "manualDeduction", "netPay", "status", "paymentDate", "paymentMethod", "referenceNumber", "periodStart", "periodEnd", "totalDebtDeduction", "otherDeductions", "deductionBreakdown", "notes", "createdAt", "deletedAt", "updatedAt", "idempotencyKey", "workerId", "pitakId", "sessionId", "assignmentId" FROM "payments"`);
+        await queryRunner.query(`DROP TABLE "payments"`);
+        await queryRunner.query(`ALTER TABLE "temporary_payments" RENAME TO "payments"`);
+        await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_STATUS" ON "payments" ("status") `);
+        await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_DATE" ON "payments" ("paymentDate") `);
+        await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_WORKER" ON "payments" ("workerId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_SESSION" ON "payments" ("sessionId") `);
+        await queryRunner.query(`CREATE UNIQUE INDEX "UX_PAYMENTS_PITAK_WORKER_SESSION" ON "payments" ("pitakId", "workerId", "sessionId") `);
+        await queryRunner.query(`CREATE UNIQUE INDEX "UX_PAYMENTS_ASSIGNMENT" ON "payments" ("assignmentId") `);
+        await queryRunner.query(`CREATE UNIQUE INDEX "UX_PAYMENTS_IDEMPOTENCY_KEY" ON "payments" ("idempotencyKey") `);
+        await queryRunner.query(`DROP INDEX "IDX_PAYMENT_HISTORY_ACTION"`);
+        await queryRunner.query(`DROP INDEX "IDX_PAYMENT_HISTORY_DATE"`);
+        await queryRunner.query(`CREATE TABLE "temporary_payment_histories" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "actionType" varchar NOT NULL DEFAULT ('update'), "changedField" varchar NOT NULL, "oldValue" varchar, "newValue" varchar, "oldAmount" decimal(10,2) DEFAULT (0), "newAmount" decimal(10,2) DEFAULT (0), "notes" varchar, "performedBy" varchar, "changeDate" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "referenceNumber" varchar, "paymentId" integer, CONSTRAINT "FK_93d739910b5eedf4e4c8ebd0ef4" FOREIGN KEY ("paymentId") REFERENCES "payments" ("id") ON DELETE CASCADE ON UPDATE NO ACTION)`);
+        await queryRunner.query(`INSERT INTO "temporary_payment_histories"("id", "actionType", "changedField", "oldValue", "newValue", "oldAmount", "newAmount", "notes", "performedBy", "changeDate", "deletedAt", "referenceNumber", "paymentId") SELECT "id", "actionType", "changedField", "oldValue", "newValue", "oldAmount", "newAmount", "notes", "performedBy", "changeDate", "deletedAt", "referenceNumber", "paymentId" FROM "payment_histories"`);
+        await queryRunner.query(`DROP TABLE "payment_histories"`);
+        await queryRunner.query(`ALTER TABLE "temporary_payment_histories" RENAME TO "payment_histories"`);
+        await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_HISTORY_ACTION" ON "payment_histories" ("actionType") `);
+        await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_HISTORY_DATE" ON "payment_histories" ("changeDate") `);
+        await queryRunner.query(`DROP INDEX "IDX_PITAK_STATUS"`);
+        await queryRunner.query(`DROP INDEX "IDX_PITAK_LOCATION"`);
+        await queryRunner.query(`CREATE TABLE "temporary_pitaks" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "location" varchar, "totalLuwang" decimal(7,2) NOT NULL DEFAULT (0), "layoutType" varchar NOT NULL DEFAULT ('square'), "sideLengths" text, "areaSqm" decimal(10,2) NOT NULL DEFAULT (0), "notes" varchar, "status" varchar CHECK( "status" IN ('active','completed','cancelled') ) NOT NULL DEFAULT ('active'), "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "bukidId" integer, CONSTRAINT "UQ_BUKID_LOCATION" UNIQUE ("bukidId", "location"), CONSTRAINT "FK_236bcbe6fce4cf9be4f0669bbf7" FOREIGN KEY ("bukidId") REFERENCES "bukids" ("id") ON DELETE CASCADE ON UPDATE NO ACTION)`);
+        await queryRunner.query(`INSERT INTO "temporary_pitaks"("id", "location", "totalLuwang", "layoutType", "sideLengths", "areaSqm", "notes", "status", "createdAt", "deletedAt", "updatedAt", "bukidId") SELECT "id", "location", "totalLuwang", "layoutType", "sideLengths", "areaSqm", "notes", "status", "createdAt", "deletedAt", "updatedAt", "bukidId" FROM "pitaks"`);
+        await queryRunner.query(`DROP TABLE "pitaks"`);
+        await queryRunner.query(`ALTER TABLE "temporary_pitaks" RENAME TO "pitaks"`);
+        await queryRunner.query(`CREATE INDEX "IDX_PITAK_STATUS" ON "pitaks" ("status") `);
+        await queryRunner.query(`CREATE INDEX "IDX_PITAK_LOCATION" ON "pitaks" ("location") `);
+    }
+
+    /**
+     * @param {QueryRunner} queryRunner
+     */
+    async down(queryRunner) {
+        await queryRunner.query(`DROP INDEX "IDX_PITAK_LOCATION"`);
+        await queryRunner.query(`DROP INDEX "IDX_PITAK_STATUS"`);
+        await queryRunner.query(`ALTER TABLE "pitaks" RENAME TO "temporary_pitaks"`);
+        await queryRunner.query(`CREATE TABLE "pitaks" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "location" varchar, "totalLuwang" decimal(7,2) NOT NULL DEFAULT (0), "layoutType" varchar NOT NULL DEFAULT ('square'), "sideLengths" text, "areaSqm" decimal(10,2) NOT NULL DEFAULT (0), "notes" varchar, "status" varchar CHECK( "status" IN ('active','completed','cancelled') ) NOT NULL DEFAULT ('active'), "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "bukidId" integer, CONSTRAINT "UQ_BUKID_LOCATION" UNIQUE ("bukidId", "location"))`);
+        await queryRunner.query(`INSERT INTO "pitaks"("id", "location", "totalLuwang", "layoutType", "sideLengths", "areaSqm", "notes", "status", "createdAt", "deletedAt", "updatedAt", "bukidId") SELECT "id", "location", "totalLuwang", "layoutType", "sideLengths", "areaSqm", "notes", "status", "createdAt", "deletedAt", "updatedAt", "bukidId" FROM "temporary_pitaks"`);
+        await queryRunner.query(`DROP TABLE "temporary_pitaks"`);
+        await queryRunner.query(`CREATE INDEX "IDX_PITAK_LOCATION" ON "pitaks" ("location") `);
+        await queryRunner.query(`CREATE INDEX "IDX_PITAK_STATUS" ON "pitaks" ("status") `);
+        await queryRunner.query(`DROP INDEX "IDX_PAYMENT_HISTORY_DATE"`);
+        await queryRunner.query(`DROP INDEX "IDX_PAYMENT_HISTORY_ACTION"`);
+        await queryRunner.query(`ALTER TABLE "payment_histories" RENAME TO "temporary_payment_histories"`);
+        await queryRunner.query(`CREATE TABLE "payment_histories" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "actionType" varchar NOT NULL DEFAULT ('update'), "changedField" varchar NOT NULL, "oldValue" varchar, "newValue" varchar, "oldAmount" decimal(10,2) DEFAULT (0), "newAmount" decimal(10,2) DEFAULT (0), "notes" varchar, "performedBy" varchar, "changeDate" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "referenceNumber" varchar, "paymentId" integer)`);
+        await queryRunner.query(`INSERT INTO "payment_histories"("id", "actionType", "changedField", "oldValue", "newValue", "oldAmount", "newAmount", "notes", "performedBy", "changeDate", "deletedAt", "referenceNumber", "paymentId") SELECT "id", "actionType", "changedField", "oldValue", "newValue", "oldAmount", "newAmount", "notes", "performedBy", "changeDate", "deletedAt", "referenceNumber", "paymentId" FROM "temporary_payment_histories"`);
+        await queryRunner.query(`DROP TABLE "temporary_payment_histories"`);
+        await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_HISTORY_DATE" ON "payment_histories" ("changeDate") `);
+        await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_HISTORY_ACTION" ON "payment_histories" ("actionType") `);
+        await queryRunner.query(`DROP INDEX "UX_PAYMENTS_IDEMPOTENCY_KEY"`);
+        await queryRunner.query(`DROP INDEX "UX_PAYMENTS_ASSIGNMENT"`);
+        await queryRunner.query(`DROP INDEX "UX_PAYMENTS_PITAK_WORKER_SESSION"`);
+        await queryRunner.query(`DROP INDEX "IDX_PAYMENT_SESSION"`);
+        await queryRunner.query(`DROP INDEX "IDX_PAYMENT_WORKER"`);
+        await queryRunner.query(`DROP INDEX "IDX_PAYMENT_DATE"`);
+        await queryRunner.query(`DROP INDEX "IDX_PAYMENT_STATUS"`);
+        await queryRunner.query(`ALTER TABLE "payments" RENAME TO "temporary_payments"`);
+        await queryRunner.query(`CREATE TABLE "payments" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "grossPay" decimal(10,2) NOT NULL DEFAULT (0), "manualDeduction" decimal(10,2) DEFAULT (0), "netPay" decimal(10,2) NOT NULL DEFAULT (0), "status" varchar CHECK( "status" IN ('pending','partially_paid','completed','cancelled') ) NOT NULL DEFAULT ('pending'), "paymentDate" datetime, "paymentMethod" varchar, "referenceNumber" varchar, "periodStart" datetime, "periodEnd" datetime, "totalDebtDeduction" decimal(10,2) NOT NULL DEFAULT (0), "otherDeductions" decimal(10,2) NOT NULL DEFAULT (0), "deductionBreakdown" json, "notes" varchar, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "idempotencyKey" varchar, "workerId" integer, "pitakId" integer, "sessionId" integer NOT NULL, "assignmentId" integer)`);
+        await queryRunner.query(`INSERT INTO "payments"("id", "grossPay", "manualDeduction", "netPay", "status", "paymentDate", "paymentMethod", "referenceNumber", "periodStart", "periodEnd", "totalDebtDeduction", "otherDeductions", "deductionBreakdown", "notes", "createdAt", "deletedAt", "updatedAt", "idempotencyKey", "workerId", "pitakId", "sessionId", "assignmentId") SELECT "id", "grossPay", "manualDeduction", "netPay", "status", "paymentDate", "paymentMethod", "referenceNumber", "periodStart", "periodEnd", "totalDebtDeduction", "otherDeductions", "deductionBreakdown", "notes", "createdAt", "deletedAt", "updatedAt", "idempotencyKey", "workerId", "pitakId", "sessionId", "assignmentId" FROM "temporary_payments"`);
+        await queryRunner.query(`DROP TABLE "temporary_payments"`);
+        await queryRunner.query(`CREATE UNIQUE INDEX "UX_PAYMENTS_IDEMPOTENCY_KEY" ON "payments" ("idempotencyKey") `);
+        await queryRunner.query(`CREATE UNIQUE INDEX "UX_PAYMENTS_ASSIGNMENT" ON "payments" ("assignmentId") `);
+        await queryRunner.query(`CREATE UNIQUE INDEX "UX_PAYMENTS_PITAK_WORKER_SESSION" ON "payments" ("pitakId", "workerId", "sessionId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_SESSION" ON "payments" ("sessionId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_WORKER" ON "payments" ("workerId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_DATE" ON "payments" ("paymentDate") `);
+        await queryRunner.query(`CREATE INDEX "IDX_PAYMENT_STATUS" ON "payments" ("status") `);
+        await queryRunner.query(`DROP INDEX "IDX_DEBT_HISTORY_TYPE"`);
+        await queryRunner.query(`DROP INDEX "IDX_DEBT_HISTORY_DATE"`);
+        await queryRunner.query(`ALTER TABLE "debt_histories" RENAME TO "temporary_debt_histories"`);
+        await queryRunner.query(`CREATE TABLE "debt_histories" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "amountPaid" decimal(10,2) NOT NULL DEFAULT (0), "previousBalance" decimal(10,2) NOT NULL DEFAULT (0), "newBalance" decimal(10,2) NOT NULL DEFAULT (0), "transactionType" varchar NOT NULL DEFAULT ('payment'), "paymentMethod" varchar, "referenceNumber" varchar, "notes" varchar, "transactionDate" datetime NOT NULL DEFAULT (datetime('now')), "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "debtId" integer, "paymentId" integer)`);
+        await queryRunner.query(`INSERT INTO "debt_histories"("id", "amountPaid", "previousBalance", "newBalance", "transactionType", "paymentMethod", "referenceNumber", "notes", "transactionDate", "createdAt", "deletedAt", "debtId", "paymentId") SELECT "id", "amountPaid", "previousBalance", "newBalance", "transactionType", "paymentMethod", "referenceNumber", "notes", "transactionDate", "createdAt", "deletedAt", "debtId", "paymentId" FROM "temporary_debt_histories"`);
+        await queryRunner.query(`DROP TABLE "temporary_debt_histories"`);
+        await queryRunner.query(`CREATE INDEX "IDX_DEBT_HISTORY_TYPE" ON "debt_histories" ("transactionType") `);
+        await queryRunner.query(`CREATE INDEX "IDX_DEBT_HISTORY_DATE" ON "debt_histories" ("transactionDate") `);
+        await queryRunner.query(`DROP INDEX "IDX_DEBT_SESSION"`);
+        await queryRunner.query(`DROP INDEX "IDX_DEBT_WORKER"`);
+        await queryRunner.query(`DROP INDEX "IDX_DEBT_DUE_DATE"`);
+        await queryRunner.query(`DROP INDEX "IDX_DEBT_STATUS"`);
+        await queryRunner.query(`ALTER TABLE "debts" RENAME TO "temporary_debts"`);
+        await queryRunner.query(`CREATE TABLE "debts" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "originalAmount" decimal(10,2) NOT NULL DEFAULT (0), "amount" decimal(10,2) NOT NULL DEFAULT (0), "reason" varchar, "balance" decimal(10,2) NOT NULL DEFAULT (0), "status" varchar CHECK( "status" IN ('pending','partially_paid','paid','cancelled','overdue','settled') ) NOT NULL DEFAULT ('pending'), "dateIncurred" datetime NOT NULL DEFAULT (datetime('now')), "dueDate" datetime, "paymentTerm" varchar, "interestRate" decimal(5,2) NOT NULL DEFAULT (0), "totalInterest" decimal(10,2) NOT NULL DEFAULT (0), "totalPaid" decimal(10,2) NOT NULL DEFAULT (0), "lastPaymentDate" datetime, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "workerId" integer, "sessionId" integer NOT NULL)`);
+        await queryRunner.query(`INSERT INTO "debts"("id", "originalAmount", "amount", "reason", "balance", "status", "dateIncurred", "dueDate", "paymentTerm", "interestRate", "totalInterest", "totalPaid", "lastPaymentDate", "createdAt", "deletedAt", "updatedAt", "workerId", "sessionId") SELECT "id", "originalAmount", "amount", "reason", "balance", "status", "dateIncurred", "dueDate", "paymentTerm", "interestRate", "totalInterest", "totalPaid", "lastPaymentDate", "createdAt", "deletedAt", "updatedAt", "workerId", "sessionId" FROM "temporary_debts"`);
+        await queryRunner.query(`DROP TABLE "temporary_debts"`);
+        await queryRunner.query(`CREATE INDEX "IDX_DEBT_SESSION" ON "debts" ("sessionId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_DEBT_WORKER" ON "debts" ("workerId") `);
+        await queryRunner.query(`CREATE INDEX "IDX_DEBT_DUE_DATE" ON "debts" ("dueDate") `);
+        await queryRunner.query(`CREATE INDEX "IDX_DEBT_STATUS" ON "debts" ("status") `);
+        await queryRunner.query(`ALTER TABLE "bukids" RENAME TO "temporary_bukids"`);
+        await queryRunner.query(`CREATE TABLE "bukids" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "name" varchar NOT NULL, "status" varchar CHECK( "status" IN ('initiated','active','completed','cancelled') ) NOT NULL DEFAULT ('active'), "notes" varchar, "location" varchar, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "sessionId" integer)`);
+        await queryRunner.query(`INSERT INTO "bukids"("id", "name", "status", "notes", "location", "createdAt", "deletedAt", "updatedAt", "sessionId") SELECT "id", "name", "status", "notes", "location", "createdAt", "deletedAt", "updatedAt", "sessionId" FROM "temporary_bukids"`);
+        await queryRunner.query(`DROP TABLE "temporary_bukids"`);
+        await queryRunner.query(`DROP INDEX "IDX_ASSIGNMENT_STATUS"`);
+        await queryRunner.query(`DROP INDEX "IDX_ASSIGNMENT_DATE"`);
+        await queryRunner.query(`ALTER TABLE "assignments" RENAME TO "temporary_assignments"`);
+        await queryRunner.query(`CREATE TABLE "assignments" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "luwangCount" decimal(5,2) NOT NULL DEFAULT (0), "assignmentDate" datetime NOT NULL, "status" varchar CHECK( "status" IN ('initiated','active','completed','cancelled') ) NOT NULL DEFAULT ('active'), "notes" varchar, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "deletedAt" datetime, "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "workerId" integer, "pitakId" integer, "sessionId" integer NOT NULL, CONSTRAINT "UQ_WORKER_PITAK_SESSION" UNIQUE ("workerId", "pitakId", "sessionId"))`);
+        await queryRunner.query(`INSERT INTO "assignments"("id", "luwangCount", "assignmentDate", "status", "notes", "createdAt", "deletedAt", "updatedAt", "workerId", "pitakId", "sessionId") SELECT "id", "luwangCount", "assignmentDate", "status", "notes", "createdAt", "deletedAt", "updatedAt", "workerId", "pitakId", "sessionId" FROM "temporary_assignments"`);
+        await queryRunner.query(`DROP TABLE "temporary_assignments"`);
+        await queryRunner.query(`CREATE INDEX "IDX_ASSIGNMENT_STATUS" ON "assignments" ("status") `);
+        await queryRunner.query(`CREATE INDEX "IDX_ASSIGNMENT_DATE" ON "assignments" ("assignmentDate") `);
+        await queryRunner.query(`DROP INDEX "idx_system_settings_type_key"`);
+        await queryRunner.query(`DROP TABLE "system_settings"`);
+        await queryRunner.query(`DROP INDEX "IDX_WORKER_NAME"`);
+        await queryRunner.query(`DROP INDEX "IDX_WORKER_STATUS"`);
+        await queryRunner.query(`DROP TABLE "workers"`);
+        await queryRunner.query(`DROP INDEX "IDX_PITAK_LOCATION"`);
+        await queryRunner.query(`DROP INDEX "IDX_PITAK_STATUS"`);
+        await queryRunner.query(`DROP TABLE "pitaks"`);
+        await queryRunner.query(`DROP INDEX "IDX_PAYMENT_HISTORY_DATE"`);
+        await queryRunner.query(`DROP INDEX "IDX_PAYMENT_HISTORY_ACTION"`);
+        await queryRunner.query(`DROP TABLE "payment_histories"`);
+        await queryRunner.query(`DROP INDEX "UX_PAYMENTS_IDEMPOTENCY_KEY"`);
+        await queryRunner.query(`DROP INDEX "UX_PAYMENTS_ASSIGNMENT"`);
+        await queryRunner.query(`DROP INDEX "UX_PAYMENTS_PITAK_WORKER_SESSION"`);
+        await queryRunner.query(`DROP INDEX "IDX_PAYMENT_SESSION"`);
+        await queryRunner.query(`DROP INDEX "IDX_PAYMENT_WORKER"`);
+        await queryRunner.query(`DROP INDEX "IDX_PAYMENT_DATE"`);
+        await queryRunner.query(`DROP INDEX "IDX_PAYMENT_STATUS"`);
+        await queryRunner.query(`DROP TABLE "payments"`);
+        await queryRunner.query(`DROP INDEX "IDX_notification_status_created"`);
+        await queryRunner.query(`DROP INDEX "IDX_notification_recipient"`);
+        await queryRunner.query(`DROP INDEX "IDX_notification_status"`);
+        await queryRunner.query(`DROP TABLE "notification_logs"`);
+        await queryRunner.query(`DROP INDEX "idx_notifications_created"`);
+        await queryRunner.query(`DROP INDEX "idx_notifications_user_read"`);
+        await queryRunner.query(`DROP TABLE "notifications"`);
+        await queryRunner.query(`DROP INDEX "idx_license_status_expires"`);
+        await queryRunner.query(`DROP INDEX "idx_next_sync"`);
+        await queryRunner.query(`DROP INDEX "idx_expires_at"`);
+        await queryRunner.query(`DROP INDEX "idx_license_key"`);
+        await queryRunner.query(`DROP TABLE "license_cache"`);
+        await queryRunner.query(`DROP INDEX "IDX_DEBT_HISTORY_TYPE"`);
+        await queryRunner.query(`DROP INDEX "IDX_DEBT_HISTORY_DATE"`);
+        await queryRunner.query(`DROP TABLE "debt_histories"`);
+        await queryRunner.query(`DROP INDEX "IDX_DEBT_SESSION"`);
+        await queryRunner.query(`DROP INDEX "IDX_DEBT_WORKER"`);
+        await queryRunner.query(`DROP INDEX "IDX_DEBT_DUE_DATE"`);
+        await queryRunner.query(`DROP INDEX "IDX_DEBT_STATUS"`);
+        await queryRunner.query(`DROP TABLE "debts"`);
+        await queryRunner.query(`DROP TABLE "bukids"`);
+        await queryRunner.query(`DROP TABLE "audit_logs"`);
+        await queryRunner.query(`DROP INDEX "IDX_ASSIGNMENT_STATUS"`);
+        await queryRunner.query(`DROP INDEX "IDX_ASSIGNMENT_DATE"`);
+        await queryRunner.query(`DROP TABLE "assignments"`);
+        await queryRunner.query(`DROP TABLE "sessions"`);
+    }
+}

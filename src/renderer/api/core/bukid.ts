@@ -1,21 +1,25 @@
 // src/renderer/api/bukidAPI.ts
-// @ts-check
+// Updated to use common pagination types and align with refactored BukidService
 
 import type { Pitak } from "./pitak";
 import type { Session } from "./session";
+import type { PaginatedResponse, ApiResponse, BaseFilters } from "../shared";
 
 // ----------------------------------------------------------------------
-// 📦 Types (aligned with backend)
+// 📦 Bukid-specific Types
 // ----------------------------------------------------------------------
 
 export interface Bukid {
   id: number;
   name: string;
- status: "initiated" | "active" | "completed" | "cancelled";
+  status: "initiated" | "active" | "completed" | "cancelled";
   notes?: string | null;
   location?: string | null;
+  area?: number | null;
+  description?: string | null;
   createdAt: string;
   updatedAt: string;
+  deletedAt?: string | null;
   session: Session;
   pitaks?: Pitak[];
 }
@@ -26,21 +30,14 @@ export interface BukidCreateData {
   status?: "initiated" | "active" | "completed" | "cancelled";
   notes?: string;
   location?: string;
+  area?: number;
+  description?: string;
 }
 
 export interface BukidUpdateData extends Partial<BukidCreateData> {}
 
-export interface BukidResponse {
-  status: boolean;
-  message: string;
-  data: Bukid;
-}
-
-export interface BukidsResponse {
-  status: boolean;
-  message: string;
-  data: Bukid[];
-}
+export type BukidResponse = ApiResponse<Bukid>;
+export type BukidsResponse = ApiResponse<PaginatedResponse<Bukid>>;
 
 export interface BukidStats {
   totalBukids: number;
@@ -48,14 +45,15 @@ export interface BukidStats {
   pitakDistribution: Array<{ bukidId: number; count: number }>;
 }
 
-export interface BukidStatsResponse {
-  status: boolean;
-  message: string;
-  data: BukidStats;
+export type BukidStatsResponse = ApiResponse<BukidStats>;
+
+export interface BukidFilters extends BaseFilters {
+  sessionId?: number;
+  status?: string;
 }
 
 // ----------------------------------------------------------------------
-// 🧠 BukidAPI Class
+// 🧠 BukidAPI Class (using common types)
 // ----------------------------------------------------------------------
 
 class BukidAPI {
@@ -71,17 +69,12 @@ class BukidAPI {
     return window.backendAPI.bukid({ method, params });
   }
 
-  // 🔎 READ
+  // 🔎 READ (with pagination)
 
-  async getAll(params?: {
-    sessionId?: number;
-    status?: string;
-    search?: string;
-    page?: number;
-    limit?: number;
-    sortBy?: string;
-    sortOrder?: "ASC" | "DESC";
-  }): Promise<BukidsResponse> {
+  /**
+   * Get all bukids with optional filters (paginated)
+   */
+  async getAll(params?: BukidFilters): Promise<BukidsResponse> {
     try {
       const response = await this.call<BukidsResponse>(
         "getAllBukids",
@@ -94,6 +87,9 @@ class BukidAPI {
     }
   }
 
+  /**
+   * Get bukid by ID
+   */
   async getById(id: number): Promise<BukidResponse> {
     try {
       if (!id || id <= 0) throw new Error("Invalid ID");
@@ -105,13 +101,19 @@ class BukidAPI {
     }
   }
 
+  /**
+   * Get bukids by session ID (paginated)
+   */
   async getBySession(
     sessionId: number,
-    params?: Omit<Parameters<BukidAPI["getAll"]>[0], "sessionId">,
+    params?: Omit<BukidFilters, "sessionId">,
   ): Promise<BukidsResponse> {
     return this.getAll({ ...params, sessionId });
   }
 
+  /**
+   * Get bukid statistics (aggregated data)
+   */
   async getStats(): Promise<BukidStatsResponse> {
     try {
       const response = await this.call<BukidStatsResponse>("getBukidStats");
@@ -124,6 +126,9 @@ class BukidAPI {
 
   // ✏️ WRITE
 
+  /**
+   * Create a new bukid
+   */
   async create(data: BukidCreateData): Promise<BukidResponse> {
     try {
       const response = await this.call<BukidResponse>("createBukid", data);
@@ -134,6 +139,9 @@ class BukidAPI {
     }
   }
 
+  /**
+   * Update an existing bukid
+   */
   async update(id: number, data: BukidUpdateData): Promise<BukidResponse> {
     try {
       if (!id || id <= 0) throw new Error("Invalid ID");
@@ -151,7 +159,7 @@ class BukidAPI {
   /**
    * Update bukid status
    * @param id - Bukid ID
-   * @param status - New status ('initiated', 'active', 'complete', 'inactive')
+   * @param status - New status ('initiated', 'active', 'completed', 'cancelled')
    */
   async updateStatus(id: number, status: string): Promise<BukidResponse> {
     try {
@@ -167,6 +175,9 @@ class BukidAPI {
     }
   }
 
+  /**
+   * Soft delete (archive) a bukid
+   */
   async delete(id: number): Promise<BukidResponse> {
     try {
       if (!id || id <= 0) throw new Error("Invalid ID");
@@ -175,6 +186,20 @@ class BukidAPI {
       throw new Error(response.message || "Failed to delete bukid");
     } catch (error: any) {
       throw new Error(error.message || "Failed to delete bukid");
+    }
+  }
+
+  /**
+   * Restore a soft-deleted bukid
+   */
+  async restore(id: number): Promise<BukidResponse> {
+    try {
+      if (!id || id <= 0) throw new Error("Invalid ID");
+      const response = await this.call<BukidResponse>("restoreBukid", { id });
+      if (response.status) return response;
+      throw new Error(response.message || "Failed to restore bukid");
+    } catch (error: any) {
+      throw new Error(error.message || "Failed to restore bukid");
     }
   }
 }

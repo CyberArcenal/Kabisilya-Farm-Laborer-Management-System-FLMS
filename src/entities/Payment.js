@@ -35,6 +35,7 @@ const Payment = new EntitySchema({
     deductionBreakdown: { type: "json", nullable: true },
     notes: { type: String, nullable: true },
     createdAt: { type: Date, createDate: true },
+      deletedAt: { type: Date, nullable: true },
     updatedAt: { type: Date, updateDate: true },
     // optional idempotency key
     idempotencyKey: { type: String, nullable: true },

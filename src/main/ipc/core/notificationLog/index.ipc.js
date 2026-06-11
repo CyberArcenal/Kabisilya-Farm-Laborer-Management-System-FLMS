@@ -1,126 +1,232 @@
-// src/main/ipc/notification/index.ipc.js
+// src/main/ipc/notificationLog/index.ipc.js
 // @ts-check
 const { ipcMain } = require("electron");
 const {
-  NotificationLogService,
+  notificationLogService,
 } = require("../../../../services/NotificationLog");
 const { logger } = require("../../../../utils/logger");
 const { AppDataSource } = require("../../../db/datasource");
 const { AuditLog } = require("../../../../entities/AuditLog");
 const { withErrorHandling } = require("../../../../middlewares/errorHandler");
 
-class NotificationLogHandler {
-  /**
-   * @param {Object} deps
-   * @param {NotificationLogService} [deps.service]
-   * @param {typeof logger} [deps.logger]
-   */
-  constructor(deps = {}) {
-    this.service = deps.service || new NotificationLogService();
+// Status constants (shared with service)
+const LOG_STATUS = {
+  QUEUED: "queued",
+  SENT: "sent",
+  FAILED: "failed",
+  RESEND: "resend",
+};
 
-    // @ts-ignore
+class NotificationLogHandler {
+  constructor(deps = {}) {
+    this.service = deps.service || notificationLogService;
     this.auditLogRepo =
       deps.auditLogRepo || AppDataSource.getRepository(AuditLog);
     this.logger = deps.logger || logger;
-    // Map method names to their transaction requirement and handler function
+
+    // Direct mapping: IPC method name = service method name
     this.methodHandlers = {
-      // Read operations – no transaction needed
-      getAllNotifications: {
+      // READ – no transaction
+      findAll: { tx: false, handler: this.service.findAll.bind(this.service) },
+      findById: {
         tx: false,
-        handler: this.service.getAllNotifications.bind(this.service),
+        handler: this.service.findById.bind(this.service),
       },
-      getNotificationById: {
+      findByRecipient: { tx: false, handler: this.findByRecipient.bind(this) },
+      search: { tx: false, handler: this.search.bind(this) },
+      getStatistics: {
         tx: false,
-        handler: this.service.getNotificationById.bind(this.service),
-      },
-      getNotificationsByRecipient: {
-        tx: false,
-        handler: this.service.getNotificationsByRecipient.bind(this.service),
-      },
-      searchNotifications: {
-        tx: false,
-        handler: this.service.searchNotifications.bind(this.service),
-      },
-      getNotificationStats: {
-        tx: false,
-        handler: this.service.getNotificationStats.bind(this.service),
+        handler: this.service.getStatistics.bind(this.service),
       },
 
-      // Write operations – require transaction
-      retryFailedNotification: {
-        tx: true,
-        handler: this.service.retryFailedNotification.bind(this.service),
-      },
-      retryAllFailed: {
-        tx: true,
-        handler: this.service.retryAllFailed.bind(this.service),
-      },
-      resendNotification: {
-        tx: true,
-        handler: this.service.resendNotification.bind(this.service),
-      },
-      deleteNotification: {
-        tx: true,
-        handler: this.service.deleteNotification.bind(this.service),
-      },
-      updateNotificationStatus: {
-        tx: true,
-        handler: this.service.updateNotificationStatus.bind(this.service),
-      },
+      // WRITE – need transaction
+      updateStatus: { tx: true, handler: this.updateStatus.bind(this) },
+      delete: { tx: true, handler: this.service.delete.bind(this.service) },
+      retryFailed: { tx: true, handler: this.retryFailed.bind(this) },
+      retryAllFailed: { tx: true, handler: this.retryAllFailed.bind(this) },
+      resend: { tx: true, handler: this.resend.bind(this) },
     };
   }
 
-  /**
-   * Main entry point for IPC.
-   * @param {Electron.IpcMainInvokeEvent} event
-   * @param {Object} payload
-   * @param {string} payload.method
-   * @param {Object} [payload.params]
-   */
   async handleRequest(event, payload) {
     const { method, params = {} } = payload;
-    // @ts-ignore
     this.logger.info(`NotificationLogHandler: ${method}`, { params });
 
-    // @ts-ignore
     const handlerConfig = this.methodHandlers[method];
-    if (!handlerConfig) {
-      throw new Error(`Unknown method: ${method}`);
-    }
+    if (!handlerConfig) throw new Error(`Unknown method: ${method}`);
 
     if (handlerConfig.tx) {
-      // Run with transaction
       return await this.runInTransaction(handlerConfig.handler, params, event);
     } else {
-      // Run without transaction
       return await handlerConfig.handler(params);
     }
   }
 
-  /**
-   * Execute a service method within a database transaction.
-   * @param {Function} serviceMethod - The service method to call (expects (params, queryRunner) => Promise)
-   * @param {Object} params
-   * @param {Electron.IpcMainInvokeEvent} event
-   * @returns {Promise<any>}
-   */
-  async runInTransaction(serviceMethod, params, event) {
+  // ---------------------- READ HELPERS (wrappers) ----------------------
+  async findByRecipient(params) {
+    const { recipient_email, page = 1, limit = 50 } = params;
+    if (!recipient_email) {
+      return {
+        status: false,
+        message: "Recipient email is required",
+        data: null,
+      };
+    }
+    return await this.service.findAll({
+      recipient_email,
+      page,
+      limit,
+      sortBy: "createdAt",
+      sortOrder: "DESC",
+    });
+  }
+
+  async search(params) {
+    const { keyword, page = 1, limit = 50 } = params;
+    if (!keyword) {
+      return { status: false, message: "Keyword is required", data: null };
+    }
+    return await this.service.findAll({
+      search: keyword,
+      page,
+      limit,
+      sortBy: "createdAt",
+      sortOrder: "DESC",
+    });
+  }
+
+  // ---------------------- WRITE HELPERS (with transaction) ----------------------
+  async updateStatus(params, queryRunner) {
+    const { id, status, errorMessage = null } = params;
+    if (!id || !status) {
+      return {
+        status: false,
+        message: "ID and status are required",
+        data: null,
+      };
+    }
+    return await this.service.updateStatus(
+      id,
+      status,
+      errorMessage,
+      "system",
+      queryRunner,
+    );
+  }
+
+  async retryFailed(params, queryRunner) {
+    const { id } = params;
+    if (!id)
+      return {
+        status: false,
+        message: "Notification ID is required",
+        data: null,
+      };
+
+    const notification = await this.service.findById(id, true);
+    if (!notification)
+      return { status: false, message: "Notification not found", data: null };
+
+    if (![LOG_STATUS.FAILED, LOG_STATUS.QUEUED].includes(notification.status)) {
+      return {
+        status: false,
+        message: `Cannot retry notification with status: ${notification.status}`,
+      };
+    }
+
+    const updates = {
+      status: LOG_STATUS.SENT,
+      retry_count: (notification.retry_count || 0) + 1,
+      sent_at: new Date(),
+      error_message: null,
+      last_error_at: null,
+    };
+    const updated = await this.service.update(
+      id,
+      updates,
+      "system",
+      queryRunner,
+    );
+    return { status: true, data: updated, sendResult: { success: true } };
+  }
+
+  async retryAllFailed(params, queryRunner) {
+    const { filters = {} } = params;
+    const result = await this.service.findAll({
+      status: [LOG_STATUS.FAILED, LOG_STATUS.QUEUED], // array – service must support it
+      recipient_email: filters.recipient_email,
+      limit: 1000,
+      includeDeleted: false,
+    });
+    const failedNotifications = result.data;
+
+    const results = [];
+    for (const notif of failedNotifications) {
+      try {
+        const updates = {
+          status: LOG_STATUS.SENT,
+          retry_count: (notif.retry_count || 0) + 1,
+          sent_at: new Date(),
+          error_message: null,
+          last_error_at: null,
+        };
+        await this.service.update(notif.id, updates, "system", queryRunner);
+        results.push({ id: notif.id, success: true });
+      } catch (err) {
+        results.push({ id: notif.id, success: false, error: err.message });
+      }
+    }
+    const successCount = results.filter((r) => r.success).length;
+    return {
+      status: true,
+      message: `Retried ${results.length} notifications. ${successCount} succeeded.`,
+      data: results,
+    };
+  }
+
+  async resend(params, queryRunner) {
+    const { id } = params;
+    if (!id)
+      return {
+        status: false,
+        message: "Notification ID is required",
+        data: null,
+      };
+
+    const notification = await this.service.findById(id, true);
+    if (!notification)
+      return { status: false, message: "Notification not found", data: null };
+
+    const updates = {
+      status: LOG_STATUS.RESEND,
+      resend_count: (notification.resend_count || 0) + 1,
+      sent_at: new Date(),
+      error_message: null,
+      last_error_at: null,
+    };
+    const updated = await this.service.update(
+      id,
+      updates,
+      "system",
+      queryRunner,
+    );
+    return { status: true, data: updated, sendResult: { success: true } };
+  }
+
+  // ---------------------- TRANSACTION WRAPPER ----------------------
+  async runInTransaction(handlerFn, params, event) {
     const queryRunner = AppDataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
-      // Call service method with queryRunner
-      const result = await serviceMethod(params, queryRunner);
-
+      const result = await handlerFn(params, queryRunner);
       if (result?.status) {
         await queryRunner.commitTransaction();
-        // Log activity (non-critical, don't fail if it errors)
-        // @ts-ignore
         await this.logActivity(
           event,
-          method,
-          `Notification ${method} executed`,
+          params.method || "unknown",
+          "Operation completed",
         ).catch((err) => {
           this.logger.warn("Failed to log activity:", err);
         });
@@ -130,24 +236,15 @@ class NotificationLogHandler {
       return result;
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      throw error; // Let the error handler middleware handle it
+      throw error;
     } finally {
       await queryRunner.release();
     }
   }
 
-  /**
-   * Log an activity to AuditLog.
-   * @param {Electron.IpcMainInvokeEvent} event
-   * @param {string} action
-   * @param {string} description
-   */
   async logActivity(event, action, description) {
-    // Extract userId from event if available (assuming it's attached by auth middleware)
-    // @ts-ignore
     const userId = event?.sender?.userId || null;
     if (!userId) return;
-
     const logEntry = this.auditLogRepo.create({
       user: userId,
       action,
@@ -159,14 +256,9 @@ class NotificationLogHandler {
   }
 }
 
-// Instantiate handler with default dependencies
 const handler = new NotificationLogHandler();
-
-// Register IPC handler with error handling middleware
 ipcMain.handle(
   "notificationLog",
-  // @ts-ignore
   withErrorHandling(handler.handleRequest.bind(handler), "IPC:notificationLog"),
 );
-
 module.exports = { NotificationLogHandler, notificationHandler: handler };

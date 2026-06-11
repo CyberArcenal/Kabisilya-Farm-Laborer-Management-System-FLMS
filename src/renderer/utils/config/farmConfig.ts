@@ -4,7 +4,7 @@
 // payment, debt, audit). All hooks rely on the SettingsContext.
 // ============================================================================
 
-import type { FarmAssignmentSettings, FarmAuditSettings, FarmBukidSettings, FarmDebtSettings, FarmPaymentSettings, FarmPitakSettings, FarmSessionSettings } from "../../api/core/system_config";
+import type { FarmAssignmentSettings, FarmAuditSettings, FarmBukidSettings, FarmDebtSettings, FarmPaymentSettings, FarmPitakSettings, FarmSessionSettings } from "../../api/utils/system_config";
 import { useSettings } from "../../contexts/SettingsContext";
 
 

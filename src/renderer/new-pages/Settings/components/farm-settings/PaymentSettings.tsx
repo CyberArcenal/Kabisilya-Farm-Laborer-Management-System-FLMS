@@ -1,5 +1,5 @@
 import React from "react";
-import type { FarmPaymentSettings } from "../../../../api/core/system_config";
+import type { FarmPaymentSettings } from "../../../../api/utils/system_config";
 
 interface PaymentSettingsProps {
   settings: FarmPaymentSettings;

@@ -1,145 +1,69 @@
 // src/subscribers/AssignmentSubscriber.js
 const Assignment = require("../entities/Assignment");
-const { AppDataSource } = require("../main/db/datasource");
-const {
-  AssignmentStateTransitionService,
-} = require("../stateTransitionService/Assignment");
+const { AssignmentStateTransitionService } = require("../stateTransitionService/Assignment");
 const { logger } = require("../utils/logger");
 
 console.log("[Subscriber] Loading AssignmentSubscriber");
 
 class AssignmentSubscriber {
-  constructor() {
-    this.transitionService = new AssignmentStateTransitionService(
-      AppDataSource,
-    );
+  constructor(dataSource) {
+    this.dataSource = dataSource;
+    this.transitionService = new AssignmentStateTransitionService(dataSource);
   }
 
   listenTo() {
     return Assignment;
   }
 
-  /**
-   * @param {Assignment} entity
-   */
-  async beforeInsert(entity) {
+  async afterInsert(entity, { manager, queryRunner }) {
     try {
-      logger.info("[AssignmentSubscriber] beforeInsert", {
-        id: entity.id,
-        status: entity.status,
-      });
-    } catch (err) {
-      logger.error("[AssignmentSubscriber] beforeInsert logging error", err);
-    }
-  }
-
-  /**
-   * @param {Assignment} entity - The saved assignment (may not have relations)
-   */
-  async afterInsert(entity) {
-    try {
-      logger.info("[AssignmentSubscriber] afterInsert", {
-        id: entity.id,
-        status: entity.status,
-      });
-
-      const hydrated = await this._hydrateAssignment(entity.id);
+      logger.info("[AssignmentSubscriber] afterInsert", { id: entity.id, status: entity.status });
+      const hydrated = await this._hydrateAssignment(entity.id, queryRunner);
       if (!hydrated) return;
 
       const pitakId = hydrated.pitak?.id;
       const sessionId = hydrated.session?.id;
       if (pitakId && sessionId) {
-        await this.transitionService.recalculateLuWangForPitakSession(
-          pitakId,
-          sessionId,
-          "system",
-        );
+        await this.transitionService.recalculateLuWangForPitakSession(pitakId, sessionId, "system", queryRunner);
       }
-
-      await this.transitionService.onInitiated(hydrated, null, "system");
+      await this.transitionService.onInitiated(hydrated, null, "system", queryRunner);
     } catch (err) {
       logger.error("[AssignmentSubscriber] afterInsert error", err);
     }
   }
 
-  /**
-   * @param {Assignment} entity
-   */
-  async beforeUpdate(entity) {
-    try {
-      logger.info("[AssignmentSubscriber] beforeUpdate", {
-        id: entity.id,
-        status: entity.status,
-      });
-    } catch (err) {
-      logger.error("[AssignmentSubscriber] beforeUpdate logging error", err);
-    }
-  }
-
-  /**
-   * @param {{ databaseEntity: Assignment, entity: Assignment }} event
-   */
-  async afterUpdate(event) {
+  async afterUpdate(event, { manager, queryRunner }) {
     const { databaseEntity, entity } = event;
     if (!entity) return;
-
     try {
-      logger.info("[AssignmentSubscriber] afterUpdate", {
-        id: entity.id,
-        oldStatus: databaseEntity?.status,
-        newStatus: entity.status,
-      });
-
+      logger.info("[AssignmentSubscriber] afterUpdate", { id: entity.id, oldStatus: databaseEntity?.status, newStatus: entity.status });
       const oldStatus = databaseEntity?.status;
       const newStatus = entity.status;
-
       if (oldStatus !== newStatus) {
-        const hydrated = await this._hydrateAssignment(entity.id);
+        const hydrated = await this._hydrateAssignment(entity.id, queryRunner);
         if (!hydrated) return;
 
         const pitakId = hydrated.pitak?.id;
         const sessionId = hydrated.session?.id;
         if (pitakId && sessionId) {
-          await this.transitionService.recalculateLuWangForPitakSession(
-            pitakId,
-            sessionId,
-            "system",
-          );
+          await this.transitionService.recalculateLuWangForPitakSession(pitakId, sessionId, "system", queryRunner);
         }
 
         switch (newStatus) {
           case "active":
-            await this.transitionService.onActivate(
-              hydrated,
-              oldStatus,
-              "system",
-            );
+            await this.transitionService.onActivate(hydrated, oldStatus, "system", queryRunner);
             break;
           case "completed":
-            await this.transitionService.onComplete(
-              hydrated,
-              oldStatus,
-              "system",
-            );
+            await this.transitionService.onComplete(hydrated, oldStatus, "system", queryRunner);
             break;
           case "cancelled":
-            await this.transitionService.onCancel(
-              hydrated,
-              oldStatus,
-              "system",
-            );
+            await this.transitionService.onCancel(hydrated, oldStatus, "system", queryRunner);
             break;
           case "initiated":
-            await this.transitionService.onInitiated(
-              hydrated,
-              oldStatus,
-              "system",
-            );
+            await this.transitionService.onInitiated(hydrated, oldStatus, "system", queryRunner);
             break;
           default:
-            logger.warn(
-              `[AssignmentSubscriber] Unhandled status transition: ${oldStatus} -> ${newStatus}`,
-            );
+            logger.warn(`[AssignmentSubscriber] Unhandled status transition: ${oldStatus} -> ${newStatus}`);
         }
       }
     } catch (err) {
@@ -147,38 +71,16 @@ class AssignmentSubscriber {
     }
   }
 
-  /**
-   * @param {Assignment} entity
-   */
-  async beforeRemove(entity) {
-    try {
-      logger.info("[AssignmentSubscriber] beforeRemove", {
-        id: entity.id,
-        status: entity.status,
-      });
-    } catch (err) {
-      logger.error("[AssignmentSubscriber] beforeRemove logging error", err);
-    }
-  }
-
-  /**
-   * @param {{ databaseEntity: Assignment, entityId: number }} event
-   */
-  async afterRemove(event) {
+  async afterRemove(event, { manager, queryRunner }) {
     const { databaseEntity, entityId } = event;
     try {
-      logger.info("[AssignmentSubscriber] afterRemove", {
-        id: entityId,
-        status: databaseEntity?.status,
-        pitakId: databaseEntity?.pitak?.id,
-        sessionId: databaseEntity?.session?.id,
-      });
-
+      logger.info("[AssignmentSubscriber] afterRemove", { id: entityId, pitakId: databaseEntity?.pitak?.id, sessionId: databaseEntity?.session?.id });
       if (databaseEntity?.pitak?.id && databaseEntity?.session?.id) {
         await this.transitionService.recalculateLuWangForPitakSession(
           databaseEntity.pitak.id,
           databaseEntity.session.id,
           "system",
+          queryRunner
         );
       }
     } catch (err) {
@@ -186,20 +88,14 @@ class AssignmentSubscriber {
     }
   }
 
-  /**
-   * @param {number} assignmentId
-   * @returns {Promise<Assignment|null>}
-   */
-  async _hydrateAssignment(assignmentId) {
-    const assignmentRepo = AppDataSource.getRepository(Assignment);
+  async _hydrateAssignment(assignmentId, queryRunner) {
+    const assignmentRepo = queryRunner ? queryRunner.manager.getRepository(Assignment) : this.dataSource.getRepository(Assignment);
     const assignment = await assignmentRepo.findOne({
       where: { id: assignmentId },
       relations: ["worker", "pitak", "session"],
     });
     if (!assignment) {
-      logger.error(
-        `[AssignmentSubscriber] Assignment #${assignmentId} not found for hydration`,
-      );
+      logger.error(`[AssignmentSubscriber] Assignment #${assignmentId} not found for hydration`);
       return null;
     }
     return assignment;

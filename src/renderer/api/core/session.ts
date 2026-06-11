@@ -1,13 +1,14 @@
 // src/renderer/api/sessionAPI.ts
-// @ts-check
+// Updated to use common pagination types and align with refactored SessionService
 
 import type { Assignment } from "./assignment";
 import type { Bukid } from "./bukid";
 import type { Debt } from "./debt";
 import type { Payment } from "./payment";
+import type { PaginatedResponse, ApiResponse, BaseFilters } from "../shared";
 
 // ----------------------------------------------------------------------
-// 📦 Types (aligned with backend)
+// 📦 Session-specific Types
 // ----------------------------------------------------------------------
 
 export interface Session {
@@ -21,6 +22,7 @@ export interface Session {
   notes?: string;
   createdAt: string;
   updatedAt: string;
+  deletedAt?: string | null;
   bukids?: Bukid[];
   assignments?: Assignment[];
   payments?: Payment[];
@@ -39,17 +41,8 @@ export interface SessionCreateData {
 
 export interface SessionUpdateData extends Partial<SessionCreateData> {}
 
-export interface SessionResponse {
-  status: boolean;
-  message: string;
-  data: Session;
-}
-
-export interface SessionsResponse {
-  status: boolean;
-  message: string;
-  data: Session[];
-}
+export type SessionResponse = ApiResponse<Session>;
+export type SessionsResponse = ApiResponse<PaginatedResponse<Session>>;
 
 export interface SessionStats {
   totalSessions: number;
@@ -61,45 +54,38 @@ export interface SessionStats {
   } | null;
 }
 
-export interface SessionStatsResponse {
-  status: boolean;
-  message: string;
-  data: SessionStats;
+export type SessionStatsResponse = ApiResponse<SessionStats>;
+
+export interface SessionFilters extends BaseFilters {
+  status?: string;
+  year?: number;
+  seasonType?: string;
+  startDateFrom?: string;
+  startDateTo?: string;
 }
 
 // ----------------------------------------------------------------------
-// 🧠 SessionAPI Class
+// 🧠 SessionAPI Class (using common types)
 // ----------------------------------------------------------------------
 
 class SessionAPI {
   private channel = "session";
 
-  private async call<T = any>(
-    method: string,
-    params: Record<string, any> = {},
-  ): Promise<T> {
+  private async call<T = any>(method: string, params: Record<string, any> = {}): Promise<T> {
     if (!window.backendAPI?.session) {
       throw new Error(`Electron API (${this.channel}) not available`);
     }
     return window.backendAPI.session({ method, params });
   }
 
-  // 🔎 READ
+  // 🔎 READ (with pagination)
 
-  async getAll(params?: {
-    status?: string;
-    year?: number;
-    seasonType?: string;
-    page?: number;
-    limit?: number;
-    sortBy?: string;
-    sortOrder?: "ASC" | "DESC";
-  }): Promise<SessionsResponse> {
+  /**
+   * Get all sessions with optional filters (paginated)
+   */
+  async getAll(params?: SessionFilters): Promise<SessionsResponse> {
     try {
-      const response = await this.call<SessionsResponse>(
-        "getAllSessions",
-        params || {},
-      );
+      const response = await this.call<SessionsResponse>("getAllSessions", params || {});
       if (response.status) return response;
       throw new Error(response.message || "Failed to fetch sessions");
     } catch (error: any) {
@@ -107,12 +93,13 @@ class SessionAPI {
     }
   }
 
+  /**
+   * Get session by ID
+   */
   async getById(id: number): Promise<SessionResponse> {
     try {
       if (!id || id <= 0) throw new Error("Invalid ID");
-      const response = await this.call<SessionResponse>("getSessionById", {
-        id,
-      });
+      const response = await this.call<SessionResponse>("getSessionById", { id });
       if (response.status) return response;
       throw new Error(response.message || "Failed to fetch session");
     } catch (error: any) {
@@ -120,6 +107,10 @@ class SessionAPI {
     }
   }
 
+  /**
+   * Get the currently active session (status = 'active')
+   * Note: This returns a single session object, not paginated.
+   */
   async getActive(): Promise<SessionResponse> {
     try {
       const response = await this.call<SessionResponse>("getActiveSession");
@@ -130,12 +121,12 @@ class SessionAPI {
     }
   }
 
+  /**
+   * Get session statistics
+   */
   async getStats(sessionId?: number): Promise<SessionStatsResponse> {
     try {
-      const response = await this.call<SessionStatsResponse>(
-        "getSessionStats",
-        { sessionId },
-      );
+      const response = await this.call<SessionStatsResponse>("getSessionStats", { sessionId });
       if (response.status) return response;
       throw new Error(response.message || "Failed to fetch stats");
     } catch (error: any) {
@@ -145,6 +136,9 @@ class SessionAPI {
 
   // ✏️ WRITE
 
+  /**
+   * Create a new session
+   */
   async create(data: SessionCreateData): Promise<SessionResponse> {
     try {
       const response = await this.call<SessionResponse>("createSession", data);
@@ -155,13 +149,13 @@ class SessionAPI {
     }
   }
 
+  /**
+   * Update an existing session
+   */
   async update(id: number, data: SessionUpdateData): Promise<SessionResponse> {
     try {
       if (!id || id <= 0) throw new Error("Invalid ID");
-      const response = await this.call<SessionResponse>("updateSession", {
-        id,
-        ...data,
-      });
+      const response = await this.call<SessionResponse>("updateSession", { id, ...data });
       if (response.status) return response;
       throw new Error(response.message || "Failed to update session");
     } catch (error: any) {
@@ -171,16 +165,11 @@ class SessionAPI {
 
   /**
    * Update session status
-   * @param id - Session ID
-   * @param status - New status ('active', 'closed', 'archived')
    */
   async updateStatus(id: number, status: string): Promise<SessionResponse> {
     try {
       if (!id || id <= 0) throw new Error("Invalid ID");
-      const response = await this.call<SessionResponse>("updateStatus", {
-        id,
-        status,
-      });
+      const response = await this.call<SessionResponse>("updateStatus", { id, status });
       if (response.status) return response;
       throw new Error(response.message || "Failed to update session status");
     } catch (error: any) {
@@ -188,16 +177,31 @@ class SessionAPI {
     }
   }
 
+  /**
+   * Soft delete a session
+   */
   async delete(id: number): Promise<SessionResponse> {
     try {
       if (!id || id <= 0) throw new Error("Invalid ID");
-      const response = await this.call<SessionResponse>("deleteSession", {
-        id,
-      });
+      const response = await this.call<SessionResponse>("deleteSession", { id });
       if (response.status) return response;
       throw new Error(response.message || "Failed to delete session");
     } catch (error: any) {
       throw new Error(error.message || "Failed to delete session");
+    }
+  }
+
+  /**
+   * Restore a soft-deleted session
+   */
+  async restore(id: number): Promise<SessionResponse> {
+    try {
+      if (!id || id <= 0) throw new Error("Invalid ID");
+      const response = await this.call<SessionResponse>("restoreSession", { id });
+      if (response.status) return response;
+      throw new Error(response.message || "Failed to restore session");
+    } catch (error: any) {
+      throw new Error(error.message || "Failed to restore session");
     }
   }
 }

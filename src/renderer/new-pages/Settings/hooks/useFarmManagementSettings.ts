@@ -8,7 +8,7 @@ import systemConfigAPI, {
   type FarmPaymentSettings,
   type FarmDebtSettings,
   type FarmAuditSettings,
-} from "../../../api/core/system_config";
+} from "../../../api/utils/system_config";
 import { useSettings } from "../../../contexts/SettingsContext"; // 👈 added
 import { showError, showSuccess } from "../../../utils/notification";
 

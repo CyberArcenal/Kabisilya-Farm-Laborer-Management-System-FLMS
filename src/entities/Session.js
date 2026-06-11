@@ -47,6 +47,7 @@ const Session = new EntitySchema({
       type: Date,
       updateDate: true,
     },
+    deletedAt: { type: Date, nullable: true },
   },
   relations: {
     bukids: {

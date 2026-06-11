@@ -1,5 +1,5 @@
 import React from "react";
-import type { FarmAssignmentSettings } from "../../../../api/core/system_config";
+import type { FarmAssignmentSettings } from "../../../../api/utils/system_config";
 
 interface AssignmentSettingsProps {
   settings: FarmAssignmentSettings;

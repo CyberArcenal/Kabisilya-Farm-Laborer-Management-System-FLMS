@@ -1,5 +1,5 @@
 import React from "react";
-import type { FarmPitakSettings } from "../../../../api/core/system_config";
+import type { FarmPitakSettings } from "../../../../api/utils/system_config";
 
 interface PitakSettingsProps {
   settings: FarmPitakSettings;

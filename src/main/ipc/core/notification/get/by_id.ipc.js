@@ -1,35 +1,16 @@
 // src/main/ipc/notification/get/by_id.ipc.js
 const notificationService = require("../../../../../services/Notification");
 
-/**
- * Get a single notification by ID
- * @param {Object} params - Request parameters
- * @param {number} params.id - Notification ID
- * @returns {Promise<{status: boolean, message: string, data: any}>}
- */
 module.exports = async (params) => {
   try {
-    // Validate required id
     if (!params.id) {
-      return {
-        status: false,
-        message: "Missing required parameter: id",
-        data: null,
-      };
+      return { status: false, message: "Missing id", data: null };
     }
-
     const id = Number(params.id);
     if (!Number.isInteger(id) || id <= 0) {
-      return {
-        status: false,
-        message: "Invalid id. Must be a positive integer.",
-        data: null,
-      };
+      return { status: false, message: "Invalid id", data: null };
     }
-
-    // Fetch notification from service
     const notification = await notificationService.findById(id);
-
     return {
       status: true,
       message: "Notification retrieved successfully",

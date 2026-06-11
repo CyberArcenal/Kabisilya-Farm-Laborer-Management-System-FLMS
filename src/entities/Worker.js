@@ -20,6 +20,7 @@ const Worker = new EntitySchema({
     // Summary fields for quick access
 
     createdAt: { type: Date, createDate: true },
+      deletedAt: { type: Date, nullable: true },
     updatedAt: { type: Date, updateDate: true },
   },
   relations: {

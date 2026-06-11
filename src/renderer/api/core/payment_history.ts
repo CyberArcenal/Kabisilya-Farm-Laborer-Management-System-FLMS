@@ -1,10 +1,11 @@
 // src/renderer/api/paymentHistoryAPI.ts
-// @ts-check
+// Updated to use common pagination types and align with refactored PaymentHistoryService
 
 import type { Payment } from "./payment";
+import type { PaginatedResponse, ApiResponse, BaseFilters } from "../shared";
 
 // ----------------------------------------------------------------------
-// 📦 Types (aligned with backend)
+// 📦 PaymentHistory-specific Types
 // ----------------------------------------------------------------------
 
 export interface PaymentHistory {
@@ -19,6 +20,9 @@ export interface PaymentHistory {
   performedBy?: string | null;
   changeDate: string;
   referenceNumber?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
   payment?: Payment;
 }
 
@@ -33,35 +37,31 @@ export interface PaymentHistoryCreateData {
   notes?: string;
   performedBy?: string;
   referenceNumber?: string;
+  changeDate?: string;
 }
 
 export interface PaymentHistoryUpdateData extends Partial<PaymentHistoryCreateData> {}
 
-export interface PaymentHistoryResponse {
-  status: boolean;
-  message: string;
-  data: PaymentHistory;
-}
-
-export interface PaymentHistoriesResponse {
-  status: boolean;
-  message: string;
-  data: PaymentHistory[];
-}
+export type PaymentHistoryResponse = ApiResponse<PaymentHistory>;
+export type PaymentHistoriesResponse = ApiResponse<PaginatedResponse<PaymentHistory>>;
 
 export interface PaymentHistoryStats {
   totalEntries: number;
   actionBreakdown: Record<string, number>;
 }
 
-export interface PaymentHistoryStatsResponse {
-  status: boolean;
-  message: string;
-  data: PaymentHistoryStats;
+export type PaymentHistoryStatsResponse = ApiResponse<PaymentHistoryStats>;
+
+export interface PaymentHistoryFilters extends BaseFilters {
+  paymentId?: number;
+  actionType?: string;
+  startDate?: string;
+  endDate?: string;
+  descriptionSearch?: string;
 }
 
 // ----------------------------------------------------------------------
-// 🧠 PaymentHistoryAPI Class
+// 🧠 PaymentHistoryAPI Class (using common types)
 // ----------------------------------------------------------------------
 
 class PaymentHistoryAPI {
@@ -74,18 +74,12 @@ class PaymentHistoryAPI {
     return window.backendAPI.paymentHistory({ method, params });
   }
 
-  // 🔎 READ
+  // 🔎 READ (with pagination)
 
-  async getAll(params?: {
-    paymentId?: number;
-    actionType?: string;
-    startDate?: string;
-    endDate?: string;
-    page?: number;
-    limit?: number;
-    sortBy?: string;
-    sortOrder?: "ASC" | "DESC";
-  }): Promise<PaymentHistoriesResponse> {
+  /**
+   * Get all payment history entries with optional filters (paginated)
+   */
+  async getAll(params?: PaymentHistoryFilters): Promise<PaymentHistoriesResponse> {
     try {
       const response = await this.call<PaymentHistoriesResponse>("getAllPaymentHistories", params || {});
       if (response.status) return response;
@@ -95,6 +89,9 @@ class PaymentHistoryAPI {
     }
   }
 
+  /**
+   * Get payment history by ID
+   */
   async getById(id: number): Promise<PaymentHistoryResponse> {
     try {
       if (!id || id <= 0) throw new Error("Invalid ID");
@@ -106,13 +103,19 @@ class PaymentHistoryAPI {
     }
   }
 
+  /**
+   * Get payment history entries by payment ID (paginated)
+   */
   async getByPayment(
     paymentId: number,
-    params?: Omit<Parameters<PaymentHistoryAPI['getAll']>[0], 'paymentId'>
+    params?: Omit<PaymentHistoryFilters, "paymentId">
   ): Promise<PaymentHistoriesResponse> {
     return this.getAll({ ...params, paymentId });
   }
 
+  /**
+   * Get payment history statistics
+   */
   async getStats(paymentId?: number): Promise<PaymentHistoryStatsResponse> {
     try {
       const response = await this.call<PaymentHistoryStatsResponse>("getPaymentHistoryStats", { paymentId });
@@ -125,6 +128,9 @@ class PaymentHistoryAPI {
 
   // ✏️ WRITE
 
+  /**
+   * Create a new payment history entry
+   */
   async create(data: PaymentHistoryCreateData): Promise<PaymentHistoryResponse> {
     try {
       const response = await this.call<PaymentHistoryResponse>("createPaymentHistory", data);
@@ -135,6 +141,9 @@ class PaymentHistoryAPI {
     }
   }
 
+  /**
+   * Update a payment history entry (use with caution)
+   */
   async update(id: number, data: PaymentHistoryUpdateData): Promise<PaymentHistoryResponse> {
     try {
       if (!id || id <= 0) throw new Error("Invalid ID");
@@ -146,6 +155,9 @@ class PaymentHistoryAPI {
     }
   }
 
+  /**
+   * Soft delete a payment history entry
+   */
   async delete(id: number): Promise<PaymentHistoryResponse> {
     try {
       if (!id || id <= 0) throw new Error("Invalid ID");
@@ -154,6 +166,20 @@ class PaymentHistoryAPI {
       throw new Error(response.message || "Failed to delete payment history");
     } catch (error: any) {
       throw new Error(error.message || "Failed to delete payment history");
+    }
+  }
+
+  /**
+   * Restore a soft-deleted payment history entry
+   */
+  async restore(id: number): Promise<PaymentHistoryResponse> {
+    try {
+      if (!id || id <= 0) throw new Error("Invalid ID");
+      const response = await this.call<PaymentHistoryResponse>("restorePaymentHistory", { id });
+      if (response.status) return response;
+      throw new Error(response.message || "Failed to restore payment history");
+    } catch (error: any) {
+      throw new Error(error.message || "Failed to restore payment history");
     }
   }
 }

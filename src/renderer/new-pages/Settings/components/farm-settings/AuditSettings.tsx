@@ -1,5 +1,5 @@
 import React from "react";
-import type { FarmAuditSettings } from "../../../../api/core/system_config";
+import type { FarmAuditSettings } from "../../../../api/utils/system_config";
 
 interface AuditSettingsProps {
   settings: FarmAuditSettings;

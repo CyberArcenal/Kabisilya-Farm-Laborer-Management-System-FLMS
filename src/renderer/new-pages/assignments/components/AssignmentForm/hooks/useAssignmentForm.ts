@@ -1,7 +1,7 @@
 // src/renderer/pages/assignments/hooks/useAssignmentForm.ts
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type { Assignment } from "../../../../../api/core/assignment";
-import systemConfigAPI from "../../../../../api/core/system_config";
+import systemConfigAPI from "../../../../../api/utils/system_config";
 import workerAPI from "../../../../../api/core/worker";
 import assignmentAPI from "../../../../../api/core/assignment";
 import { showError } from "../../../../../utils/notification";

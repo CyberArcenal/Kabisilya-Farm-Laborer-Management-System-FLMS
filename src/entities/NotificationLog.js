@@ -26,6 +26,7 @@ const NotificationLog = new EntitySchema({
     last_error_at: { type: "datetime", nullable: true }, // when last failed
     created_at: { type: "datetime", createDate: true },
     updated_at: { type: "datetime", updateDate: true },
+    deletedAt: { type: Date, nullable: true },
   },
   indices: [
     { name: "IDX_notification_status", columns: ["status"] },

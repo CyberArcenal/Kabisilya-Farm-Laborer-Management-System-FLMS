@@ -1,5 +1,5 @@
 import React from "react";
-import type { FarmDebtSettings } from "../../../../api/core/system_config";
+import type { FarmDebtSettings } from "../../../../api/utils/system_config";
 
 interface DebtSettingsProps {
   settings: FarmDebtSettings;

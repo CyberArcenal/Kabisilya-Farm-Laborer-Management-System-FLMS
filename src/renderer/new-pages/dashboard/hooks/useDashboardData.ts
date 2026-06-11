@@ -1,10 +1,10 @@
 import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
-import type { DefaultSessionData } from "../../../api/core/system_config";
+import type { DefaultSessionData } from "../../../api/utils/system_config";
 import { workerPerformanceAPI, type WorkersOverviewData } from "../../../api/analytics/workerPerformance";
 import { financialAPI, type FinancialOverviewData } from "../../../api/analytics/financial";
-import systemConfigAPI from "../../../api/core/system_config";
+import systemConfigAPI from "../../../api/utils/system_config";
 import type { AssignmentOverviewData, LiveDashboardData } from "../../../api/analytics/dashboard";
 import dashboardAPI from "../../../api/analytics/dashboard";
 

@@ -1,8 +1,10 @@
 // src/renderer/api/notificationLog.ts
-// Refactored – fully aligned with backend NotificationLogService
+// Refactored – uses common pagination types and aligns with backend NotificationLogService
+
+import type { PaginatedResponse, ApiResponse, BaseFilters } from "../shared";
 
 // ----------------------------------------------------------------------
-// 📦 Types & Interfaces (client‑side normalized shape)
+// 📦 Types & Interfaces
 // ----------------------------------------------------------------------
 
 export interface NotificationLogEntry {
@@ -18,14 +20,7 @@ export interface NotificationLogEntry {
   last_error_at: string | null;
   created_at: string;
   updated_at: string;
-}
-
-export interface PaginatedNotifications {
-  items: NotificationLogEntry[];
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
+  deleted_at?: string | null;
 }
 
 export interface NotificationStats {
@@ -35,66 +30,17 @@ export interface NotificationStats {
   last24h: number;
 }
 
-// ----------------------------------------------------------------------
-// 📨 Client‑side response interfaces (normalized, message always present)
-// ----------------------------------------------------------------------
+// Response types using common patterns
+export type NotificationsResponse = ApiResponse<PaginatedResponse<NotificationLogEntry>>;
+export type NotificationResponse = ApiResponse<NotificationLogEntry>;
+export type NotificationStatsResponse = ApiResponse<NotificationStats>;
+export type NotificationActionResponse = ApiResponse<any>;
 
-export interface NotificationsResponse {
-  status: boolean;
-  message: string;
-  data: PaginatedNotifications;
-}
-
-export interface NotificationResponse {
-  status: boolean;
-  message: string;
-  data: NotificationLogEntry;
-}
-
-export interface NotificationStatsResponse {
-  status: boolean;
-  message: string;
-  data: NotificationStats;
-}
-
-export interface NotificationActionResponse {
-  status: boolean;
-  message: string;
-  data?: any;
-}
-
-// ----------------------------------------------------------------------
-// 🧠 Internal types – match actual backend IPC responses (message optional)
-// ----------------------------------------------------------------------
-
-interface BackendPaginatedResponse {
-  status: boolean;
-  message?: string;
-  data: NotificationLogEntry[];
-  pagination?: {
-    page: number;
-    limit: number;
-    total: number;
-    pages: number;
-  };
-}
-
-interface BackendSingleResponse {
-  status: boolean;
-  message?: string;
-  data: NotificationLogEntry;
-}
-
-interface BackendStatsResponse {
-  status: boolean;
-  message?: string;
-  data: NotificationStats;
-}
-
-interface BackendActionResponse {
-  status: boolean;
-  message?: string;
-  data?: any;
+export interface NotificationLogFilters extends BaseFilters {
+  recipient_email?: string;
+  status?: string | string[];
+  startDate?: string;
+  endDate?: string;
 }
 
 // ----------------------------------------------------------------------
@@ -102,108 +48,59 @@ interface BackendActionResponse {
 // ----------------------------------------------------------------------
 
 class NotificationLogAPI {
-  /**
-   * Internal IPC caller – returns a raw backend response.
-   * @throws if IPC is not available or response is malformed.
-   */
-  private async callRaw<
-    T extends { status: boolean; message?: string; data?: any },
-  >(method: string, params: Record<string, any> = {}): Promise<T> {
+  private async callRaw<T = any>(method: string, params: any = {}): Promise<T> {
     if (!window.backendAPI?.notificationLog) {
-      throw new Error("Electron API (notification) not available");
+      throw new Error("Electron API (notificationLog) not available");
     }
-
     const response = await window.backendAPI.notificationLog({ method, params });
-
-    if (!response || typeof response !== "object") {
-      throw new Error("Invalid response format from backend");
-    }
-
+    if (!response || typeof response !== "object") throw new Error("Invalid response");
     return response as T;
   }
 
-  /**
-   * Normalizes a backend response to always include a message string.
-   */
-  private normalizeResponse<
-    T extends { status: boolean; message?: string; data?: any },
-  >(response: T): T & { message: string } {
-    return {
-      ...response,
-      message: response.message ?? "",
-    };
+  private normalizeResponse<T extends { status: boolean; message?: string; data?: any }>(
+    response: T
+  ): T & { message: string } {
+    return { ...response, message: response.message ?? "" };
   }
 
-  /**
-   * Transforms a paginated backend response into NotificationsResponse.
-   */
-  private toNotificationsResponse(
-    response: BackendPaginatedResponse,
-  ): NotificationsResponse {
-    const normalized = this.normalizeResponse(response);
-    if (normalized.status && response.pagination) {
-      const { page, limit, total, pages } = response.pagination;
+  private toNotificationsResponse(raw: any): NotificationsResponse {
+    const normalized = this.normalizeResponse(raw);
+    if (normalized.status && raw.pagination) {
+      const { page, limit, total, pages } = raw.pagination;
       return {
         ...normalized,
         data: {
-          items: response.data,
-          page,
-          limit,
-          total,
-          totalPages: pages,
+          items: raw.data || [],
+          pagination: { page, limit, total, pages },
         },
       };
     }
-    // Failed response – return empty pagination
     return {
       ...normalized,
-      data: {
-        items: [],
-        total: 0,
-        page: 1,
-        limit: 50,
-        totalPages: 0,
-      },
+      data: { items: [], pagination: { page: 1, limit: 50, total: 0, pages: 0 } },
     };
   }
 
   // --------------------------------------------------------------------
-  // 🔎 READ-ONLY METHODS
+  // READ – aligned with service methods
   // --------------------------------------------------------------------
 
-  async getAll(params?: {
-    page?: number;
-    limit?: number;
-    status?: string;
-    startDate?: string;
-    endDate?: string;
-    sortBy?: string;
-    sortOrder?: "ASC" | "DESC";
-  }): Promise<NotificationsResponse> {
-    const raw = await this.callRaw<BackendPaginatedResponse>(
-      "getAllNotifications",
-      params || {},
-    );
+  async findAll(params?: NotificationLogFilters): Promise<NotificationsResponse> {
+    const raw = await this.callRaw("findAll", params || {});
     return this.toNotificationsResponse(raw);
   }
 
-  async getById(id: number): Promise<NotificationResponse> {
-    const raw = await this.callRaw<BackendSingleResponse>(
-      "getNotificationById",
-      { id },
-    );
+  async findById(id: number): Promise<NotificationResponse> {
+    const raw = await this.callRaw("findById", { id });
     return this.normalizeResponse(raw);
   }
 
-  async getByRecipient(params: {
+  async findByRecipient(params: {
     recipient_email: string;
     page?: number;
     limit?: number;
   }): Promise<NotificationsResponse> {
-    const raw = await this.callRaw<BackendPaginatedResponse>(
-      "getNotificationsByRecipient",
-      params,
-    );
+    const raw = await this.callRaw("findByRecipient", params);
     return this.toNotificationsResponse(raw);
   }
 
@@ -212,112 +109,66 @@ class NotificationLogAPI {
     page?: number;
     limit?: number;
   }): Promise<NotificationsResponse> {
-    const raw = await this.callRaw<BackendPaginatedResponse>(
-      "searchNotifications",
-      params,
-    );
+    const raw = await this.callRaw("search", params);
     return this.toNotificationsResponse(raw);
   }
 
-  async getByStatus(params: {
-    status: string;
-    page?: number;
-    limit?: number;
-  }): Promise<NotificationsResponse> {
-    return this.getAll({ ...params });
-  }
-
-  // --------------------------------------------------------------------
-  // 📊 STATISTICS
-  // --------------------------------------------------------------------
-
-  async getStats(params?: {
+  async getStatistics(params?: {
     startDate?: string;
     endDate?: string;
   }): Promise<NotificationStatsResponse> {
-    const raw = await this.callRaw<BackendStatsResponse>(
-      "getNotificationStats",
-      params || {},
-    );
+    const raw = await this.callRaw("getStatistics", params || {});
     return this.normalizeResponse(raw);
   }
 
   // --------------------------------------------------------------------
-  // ✏️ WRITE OPERATIONS
+  // WRITE – aligned with service methods
   // --------------------------------------------------------------------
-
-  async delete(id: number): Promise<NotificationActionResponse> {
-    const raw = await this.callRaw<BackendActionResponse>(
-      "deleteNotification",
-      { id },
-    );
-    return this.normalizeResponse(raw);
-  }
 
   async updateStatus(params: {
     id: number;
     status: string;
     errorMessage?: string | null;
   }): Promise<NotificationActionResponse> {
-    const raw = await this.callRaw<BackendActionResponse>(
-      "updateNotificationStatus",
-      params,
-    );
+    const raw = await this.callRaw("updateStatus", params);
     return this.normalizeResponse(raw);
   }
 
-  // --------------------------------------------------------------------
-  // 🔄 RETRY / RESEND OPERATIONS
-  // --------------------------------------------------------------------
+  async delete(id: number): Promise<NotificationActionResponse> {
+    const raw = await this.callRaw("delete", { id });
+    return this.normalizeResponse(raw);
+  }
 
   async retryFailed(id: number): Promise<NotificationActionResponse> {
-    const raw = await this.callRaw<BackendActionResponse>(
-      "retryFailedNotification",
-      { id },
-    );
+    const raw = await this.callRaw("retryFailed", { id });
     return this.normalizeResponse(raw);
   }
 
   async retryAllFailed(params?: {
-    filters?: {
-      recipient_email?: string;
-      createdBefore?: string;
-    };
+    filters?: { recipient_email?: string; createdBefore?: string };
   }): Promise<NotificationActionResponse> {
-    const raw = await this.callRaw<BackendActionResponse>(
-      "retryAllFailed",
-      params || {},
-    );
+    const raw = await this.callRaw("retryAllFailed", params || {});
     return this.normalizeResponse(raw);
   }
 
   async resend(id: number): Promise<NotificationActionResponse> {
-    const raw = await this.callRaw<BackendActionResponse>(
-      "resendNotification",
-      { id },
-    );
+    const raw = await this.callRaw("resend", { id });
     return this.normalizeResponse(raw);
   }
 
   // --------------------------------------------------------------------
-  // 🧰 UTILITY METHODS
+  // Utility methods
   // --------------------------------------------------------------------
 
   async hasLogs(recipient_email: string): Promise<boolean> {
-    const response = await this.getByRecipient({ recipient_email, limit: 1 });
-    return response.status && response.data.total > 0;
+    const res = await this.findByRecipient({ recipient_email, limit: 1 });
+    return res.status && res.data.pagination.total > 0;
   }
 
-  async getLatestByRecipient(
-    recipient_email: string,
-  ): Promise<NotificationLogEntry | null> {
-    const response = await this.getByRecipient({
-      recipient_email,
-      limit: 1,
-      page: 1,
-    });
-    if (response.status && response.data.items.length > 0) {
-      return response.data.items[0];
+  async getLatestByRecipient(recipient_email: string): Promise<NotificationLogEntry | null> {
+    const res = await this.findByRecipient({ recipient_email, limit: 1, page: 1 });
+    if (res.status && res.data.items.length > 0) {
+      return res.data.items[0];
     }
     return null;
   }
@@ -326,10 +177,6 @@ class NotificationLogAPI {
     return !!window.backendAPI?.notificationLog;
   }
 }
-
-// ----------------------------------------------------------------------
-// 📤 Export singleton instance
-// ----------------------------------------------------------------------
 
 const notificationLogAPI = new NotificationLogAPI();
 export default notificationLogAPI;

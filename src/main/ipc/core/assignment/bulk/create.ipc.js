@@ -8,13 +8,17 @@ const assignmentService = require("../../../../../services/Assignment");
 const { logger } = require("../../../../../utils/logger");
 
 // @ts-ignore
-module.exports = async function createBulkAssignments(params) {
+module.exports = async function createBulkAssignments(params, queryRunner) {
   try {
     // @ts-ignore
     logger.info("IPC: createBulkAssignments", { params });
 
     // Validate required fields
-    if (!params.workerIds || !Array.isArray(params.workerIds) || params.workerIds.length === 0) {
+    if (
+      !params.workerIds ||
+      !Array.isArray(params.workerIds) ||
+      params.workerIds.length === 0
+    ) {
       return {
         status: false,
         message: "workerIds must be a non-empty array",
@@ -28,7 +32,11 @@ module.exports = async function createBulkAssignments(params) {
       return { status: false, message: "sessionId is required", data: null };
     }
     if (!params.assignmentDate) {
-      return { status: false, message: "assignmentDate is required", data: null };
+      return {
+        status: false,
+        message: "assignmentDate is required",
+        data: null,
+      };
     }
 
     // Ensure AppDataSource is initialized
@@ -47,7 +55,9 @@ module.exports = async function createBulkAssignments(params) {
       relations: ["worker"], // we only need worker id
     });
 
-    const existingWorkerIds = new Set(existingAssignments.map(a => a.worker.id));
+    const existingWorkerIds = new Set(
+      existingAssignments.map((a) => a.worker.id),
+    );
 
     const created = [];
     const skipped = [];
@@ -64,7 +74,10 @@ module.exports = async function createBulkAssignments(params) {
 
       // Skip if already assigned in the database
       if (existingWorkerIds.has(workerId)) {
-        skipped.push({ workerId, reason: "Already assigned to this pitak and session" });
+        skipped.push({
+          workerId,
+          reason: "Already assigned to this pitak and session",
+        });
         continue;
       }
 
@@ -77,7 +90,8 @@ module.exports = async function createBulkAssignments(params) {
             assignmentDate: params.assignmentDate,
             notes: params.notes,
           },
-          "system"
+          "system",
+          queryRunner,
         );
         created.push(result);
         createdInBatch.add(workerId);

@@ -1,12 +1,13 @@
 // src/renderer/api/debtAPI.ts
-// @ts-check
+// Updated to use common pagination types and align with refactored DebtService
 
 import type { DebtHistory } from "./debt_history";
 import type { Session } from "./session";
 import type { Worker } from "./worker";
+import type { PaginatedResponse, ApiResponse, BaseFilters } from "../shared";
 
 // ----------------------------------------------------------------------
-// 📦 Types (aligned with backend)
+// 📦 Debt-specific Types
 // ----------------------------------------------------------------------
 
 export interface Debt {
@@ -25,6 +26,7 @@ export interface Debt {
   lastPaymentDate?: string | null;
   createdAt: string;
   updatedAt: string;
+  deletedAt?: string | null;
   worker?: Worker;
   session?: Session;
   history?: DebtHistory[];
@@ -44,17 +46,8 @@ export interface DebtCreateData {
 
 export interface DebtUpdateData extends Partial<DebtCreateData> {}
 
-export interface DebtResponse {
-  status: boolean;
-  message: string;
-  data: Debt;
-}
-
-export interface DebtsResponse {
-  status: boolean;
-  message: string;
-  data: Debt[];
-}
+export type DebtResponse = ApiResponse<Debt>;
+export type DebtsResponse = ApiResponse<PaginatedResponse<Debt>>;
 
 export interface DebtStats {
   totalDebts: number;
@@ -63,14 +56,20 @@ export interface DebtStats {
   totalBalance: number;
 }
 
-export interface DebtStatsResponse {
-  status: boolean;
-  message: string;
-  data: DebtStats;
+export type DebtStatsResponse = ApiResponse<DebtStats>;
+
+export interface DebtFilters extends BaseFilters {
+  workerId?: number;
+  sessionId?: number;
+  status?: string;
+  dueDateStart?: string;
+  dueDateEnd?: string;
+  minAmount?: number;
+  maxAmount?: number;
 }
 
 // ----------------------------------------------------------------------
-// 🧠 DebtAPI Class
+// 🧠 DebtAPI Class (using common types)
 // ----------------------------------------------------------------------
 
 class DebtAPI {
@@ -83,19 +82,12 @@ class DebtAPI {
     return window.backendAPI.debt({ method, params });
   }
 
-  // 🔎 READ
+  // 🔎 READ (with pagination)
 
-  async getAll(params?: {
-    workerId?: number;
-    sessionId?: number;
-    status?: string;
-    dueDateStart?: string;
-    dueDateEnd?: string;
-    page?: number;
-    limit?: number;
-    sortBy?: string;
-    sortOrder?: "ASC" | "DESC";
-  }): Promise<DebtsResponse> {
+  /**
+   * Get all debts with optional filters (paginated)
+   */
+  async getAll(params?: DebtFilters): Promise<DebtsResponse> {
     try {
       const response = await this.call<DebtsResponse>("getAllDebts", params || {});
       if (response.status) return response;
@@ -105,6 +97,9 @@ class DebtAPI {
     }
   }
 
+  /**
+   * Get debt by ID
+   */
   async getById(id: number): Promise<DebtResponse> {
     try {
       if (!id || id <= 0) throw new Error("Invalid ID");
@@ -116,20 +111,29 @@ class DebtAPI {
     }
   }
 
+  /**
+   * Get debts by worker ID (paginated)
+   */
   async getByWorker(
     workerId: number,
-    params?: Omit<Parameters<DebtAPI['getAll']>[0], 'workerId'>
+    params?: Omit<DebtFilters, "workerId">
   ): Promise<DebtsResponse> {
     return this.getAll({ ...params, workerId });
   }
 
+  /**
+   * Get debts by session ID (paginated)
+   */
   async getBySession(
     sessionId: number,
-    params?: Omit<Parameters<DebtAPI['getAll']>[0], 'sessionId'>
+    params?: Omit<DebtFilters, "sessionId">
   ): Promise<DebtsResponse> {
     return this.getAll({ ...params, sessionId });
   }
 
+  /**
+   * Get debt statistics
+   */
   async getStats(sessionId?: number): Promise<DebtStatsResponse> {
     try {
       const response = await this.call<DebtStatsResponse>("getDebtStats", { sessionId });
@@ -142,6 +146,9 @@ class DebtAPI {
 
   // ✏️ WRITE
 
+  /**
+   * Create a new debt
+   */
   async create(data: DebtCreateData): Promise<DebtResponse> {
     try {
       const response = await this.call<DebtResponse>("createDebt", data);
@@ -152,6 +159,9 @@ class DebtAPI {
     }
   }
 
+  /**
+   * Update an existing debt
+   */
   async update(id: number, data: DebtUpdateData): Promise<DebtResponse> {
     try {
       if (!id || id <= 0) throw new Error("Invalid ID");
@@ -162,22 +172,24 @@ class DebtAPI {
       throw new Error(error.message || "Failed to update debt");
     }
   }
-  /**
- * Update debt status
- * @param id - Debt ID
- * @param status - New status ('pending', 'partially_paid', 'paid', 'cancelled', 'overdue', 'settled')
- */
-async updateStatus(id: number, status: string): Promise<DebtResponse> {
-  try {
-    if (!id || id <= 0) throw new Error("Invalid ID");
-    const response = await this.call<DebtResponse>("updateStatus", { id, status });
-    if (response.status) return response;
-    throw new Error(response.message || "Failed to update debt status");
-  } catch (error: any) {
-    throw new Error(error.message || "Failed to update debt status");
-  }
-}
 
+  /**
+   * Update debt status
+   */
+  async updateStatus(id: number, status: string): Promise<DebtResponse> {
+    try {
+      if (!id || id <= 0) throw new Error("Invalid ID");
+      const response = await this.call<DebtResponse>("updateStatus", { id, status });
+      if (response.status) return response;
+      throw new Error(response.message || "Failed to update debt status");
+    } catch (error: any) {
+      throw new Error(error.message || "Failed to update debt status");
+    }
+  }
+
+  /**
+   * Soft delete a debt
+   */
   async delete(id: number): Promise<DebtResponse> {
     try {
       if (!id || id <= 0) throw new Error("Invalid ID");
@@ -186,6 +198,20 @@ async updateStatus(id: number, status: string): Promise<DebtResponse> {
       throw new Error(response.message || "Failed to delete debt");
     } catch (error: any) {
       throw new Error(error.message || "Failed to delete debt");
+    }
+  }
+
+  /**
+   * Restore a soft-deleted debt
+   */
+  async restore(id: number): Promise<DebtResponse> {
+    try {
+      if (!id || id <= 0) throw new Error("Invalid ID");
+      const response = await this.call<DebtResponse>("restoreDebt", { id });
+      if (response.status) return response;
+      throw new Error(response.message || "Failed to restore debt");
+    } catch (error: any) {
+      throw new Error(error.message || "Failed to restore debt");
     }
   }
 }

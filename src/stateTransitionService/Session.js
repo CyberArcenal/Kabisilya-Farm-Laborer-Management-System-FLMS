@@ -1,39 +1,25 @@
 // src/stateTransitionServices/SessionStateTransitionService.js
-// @ts-check
- const { logger} = require("../utils/logger");
+const { logger } = require("../utils/logger");
+const { updateDb, saveDb } = require("../utils/dbUtils/dbActions");
+
 class SessionStateTransitionService {
-  // @ts-ignore
   constructor(dataSource) {
     this.dataSource = dataSource;
-    // Add repositories if needed later
   }
 
-  /**
-   * Called when a session becomes active.
-   * Sets this session as the default session in system settings
-   * and closes any other active sessions.
-   *
-   * @param {Session} session - The activated session
-   * @param {string|null} oldStatus - Previous status
-   * @param {string} user - User performing the action
-   */
-  async onActivate(session, oldStatus = null, user = "system") {
+  _getRepo(qr, entityClass) {
+    if (qr) return qr.manager.getRepository(entityClass);
+    return this.dataSource.getRepository(entityClass);
+  }
+
+  async onActivate(session, oldStatus = null, user = "system", qr = null) {
     const Session = require("../entities/Session");
-    const {
-      SystemSetting,
-      SettingType,
-    } = require("../entities/systemSettings");
-    const { AppDataSource } = require("../main/db/datasource");
-    const { updateDb, saveDb } = require("../utils/dbUtils/dbActions");
-   
-    logger.info(
-      `[SessionTransition] Activating session #${session.id}, old status: ${oldStatus}`,
-    );
+    const { SystemSetting, SettingType } = require("../entities/systemSettings");
+    const sessionRepo = this._getRepo(qr, Session);
+    const settingRepo = this._getRepo(qr, SystemSetting);
 
-    const sessionRepo = AppDataSource.getRepository(Session);
-    const settingRepo = AppDataSource.getRepository(SystemSetting);
+    logger.info(`[SessionTransition] Activating session #${session.id}, old status: ${oldStatus}`);
 
-    // 1. Close any other active sessions
     const otherActiveSessions = await sessionRepo
       .createQueryBuilder("session")
       .where("session.status = :status", { status: "active" })
@@ -43,22 +29,20 @@ class SessionStateTransitionService {
     for (const other of otherActiveSessions) {
       other.status = "closed";
       other.updatedAt = new Date();
-      await updateDb(sessionRepo, other);
+      await updateDb(sessionRepo, other, { queryRunner: qr });
       logger.info(`[SessionTransition] Closed session #${other.id}`);
     }
 
-    // 2. Update or create the default_session_id setting
     const settingKey = "default_session_id";
     const settingType = SettingType.FARM_SESSION;
-
     let defaultSetting = await settingRepo.findOne({
-      where: { key: settingKey, setting_type: settingType, is_deleted: false },
+      where: { key: settingKey, setting_type: settingType, deletedAt: null },
     });
 
     if (defaultSetting) {
       defaultSetting.value = String(session.id);
-      defaultSetting.updated_at = new Date();
-      await updateDb(settingRepo, defaultSetting);
+      defaultSetting.updatedAt = new Date();
+      await updateDb(settingRepo, defaultSetting, { queryRunner: qr });
     } else {
       defaultSetting = settingRepo.create({
         key: settingKey,
@@ -66,38 +50,20 @@ class SessionStateTransitionService {
         setting_type: settingType,
         description: "Default session ID used throughout the farm",
         is_public: false,
-        is_deleted: false,
-        created_at: new Date(),
-        updated_at: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
       });
-      await saveDb(settingRepo, defaultSetting);
+      await saveDb(settingRepo, defaultSetting, { queryRunner: qr });
     }
-
-    logger.info(
-      `[SessionTransition] Default session set to #${session.id} (setting ID: ${defaultSetting.id})`,
-    );
+    logger.info(`[SessionTransition] Default session set to #${session.id}`);
   }
 
-  /**
-   * Called when a session is closed.
-   */
-  // @ts-ignore
-  async onClose(session, oldStatus = null, user = "system") {
-    logger.info(
-      `[SessionTransition] Closing session #${session.id}, old status: ${oldStatus}`,
-    );
-    // Placeholder: future logic (e.g., freeze assignments, generate report)
+  async onClose(session, oldStatus = null, user = "system", qr = null) {
+    logger.info(`[SessionTransition] Closing session #${session.id}, old status: ${oldStatus}`);
   }
 
-  /**
-   * Called when a session is archived.
-   */
-  // @ts-ignore
-  async onArchive(session, oldStatus = null, user = "system") {
-    logger.info(
-      `[SessionTransition] Archiving session #${session.id}, old status: ${oldStatus}`,
-    );
-    // Placeholder: future logic (e.g., move to long-term storage, prevent edits)
+  async onArchive(session, oldStatus = null, user = "system", qr = null) {
+    logger.info(`[SessionTransition] Archiving session #${session.id}, old status: ${oldStatus}`);
   }
 }
 

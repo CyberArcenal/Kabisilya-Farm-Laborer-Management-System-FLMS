@@ -9,7 +9,7 @@ module.exports = async (params, queryRunner) => {
     if (!id) throw new Error("Assignment ID is required");
     if (!status) throw new Error("New status is required");
 
-    const updated = await assignmentService.updateStatus(id, status, userId || "system");
+    const updated = await assignmentService.updateStatus(id, status, userId || "system", queryRunner);
     return {
       status: true,
       message: "Assignment status updated successfully",

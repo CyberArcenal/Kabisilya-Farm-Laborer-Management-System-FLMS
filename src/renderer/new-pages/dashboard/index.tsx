@@ -47,7 +47,7 @@ import type {
 import dashboardAPI from "../../api/analytics/dashboard";
 import systemConfigAPI, {
   type DefaultSessionData,
-} from "../../api/core/system_config";
+} from "../../api/utils/system_config";
 import { useDynamicWeather } from "../../hooks/useDynamicWeather";
 
 const DashboardPage: React.FC = () => {

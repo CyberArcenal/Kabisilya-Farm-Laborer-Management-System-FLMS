@@ -1,107 +1,61 @@
 // src/subscribers/PitakSubscriber.js
-// @ts-check
 const Pitak = require("../entities/Pitak");
-const { AppDataSource } = require("../main/db/datasource");
-const {
-  PitakStateTransitionService,
-} = require("../stateTransitionService/Pitak");
+const { PitakStateTransitionService } = require("../stateTransitionService/Pitak");
 const { logger } = require("../utils/logger");
 
 console.log("[Subscriber] Loading PitakSubscriber");
 
 class PitakSubscriber {
-  constructor() {
-    this.transitionService = new PitakStateTransitionService(AppDataSource);
+  constructor(dataSource) {
+    this.dataSource = dataSource;
+    this.transitionService = new PitakStateTransitionService(dataSource);
   }
 
   listenTo() {
     return Pitak;
   }
 
-  /**
-   * @param {any} entity
-   */
-  async afterInsert(entity) {
+  async afterInsert(entity, { manager, queryRunner }) {
     try {
-      // @ts-ignore
-      logger.info("[PitakSubscriber] afterInsert", {
-        entity: JSON.parse(JSON.stringify(entity)),
-      });
-      // Optionally call onInitiated if needed
+      logger.info("[PitakSubscriber] afterInsert", { id: entity.id });
     } catch (err) {
-      // @ts-ignore
       logger.error("[PitakSubscriber] afterInsert error", err);
     }
   }
 
-  /**
-   * @param {{ entity: any; databaseEntity: any; }} event
-   */
-  async afterUpdate(event) {
-    if (!event.entity) return;
+  async afterUpdate(event, { manager, queryRunner }) {
+    const { databaseEntity, entity } = event;
+    if (!entity) return;
+    logger.info("[PitakSubscriber] afterUpdate", { id: entity.id, oldStatus: databaseEntity?.status, newStatus: entity.status });
 
-    // @ts-ignore
-    logger.info("[PitakSubscriber] afterUpdate", {
-      entity: JSON.parse(JSON.stringify(event.entity)),
-    });
+    if (databaseEntity && databaseEntity.status === entity.status) return;
 
-    const oldPitak = event.databaseEntity;
-    const newPitak = event.entity;
-
-    // If status didn't change, skip
-    if (oldPitak && oldPitak.status === newPitak.status) {
-      return;
-    }
-
-    // Hydrate pitak with its assignments (needed for cascade)
-    const hydrated = await this._hydratePitak(newPitak.id);
+    const hydrated = await this._hydratePitak(entity.id, queryRunner);
     if (!hydrated) return;
 
-    switch (newPitak.status) {
+    switch (entity.status) {
       case "active":
-        await this.transitionService.onActivate(
-          hydrated,
-          oldPitak?.status,
-          // @ts-ignore
-          "system",
-        );
+        await this.transitionService.onActivate(hydrated, databaseEntity?.status, "system", queryRunner);
         break;
       case "completed":
-        await this.transitionService.onComplete(
-          hydrated,
-          oldPitak?.status,
-          // @ts-ignore
-          "system",
-        );
+        await this.transitionService.onComplete(hydrated, databaseEntity?.status, "system", queryRunner);
         break;
       case "cancelled":
-        await this.transitionService.onCancelled(
-          hydrated,
-          oldPitak?.status,
-          // @ts-ignore
-          "system",
-        );
+        await this.transitionService.onCancelled(hydrated, databaseEntity?.status, "system", queryRunner);
         break;
       default:
-        logger.warn(
-          `[PitakSubscriber] Unhandled status transition: ${oldPitak?.status} -> ${newPitak.status}`,
-        );
+        logger.warn(`[PitakSubscriber] Unhandled status: ${entity.status}`);
     }
   }
 
-  /**
-   * @param {any} pitakId
-   */
-  async _hydratePitak(pitakId) {
-    const pitakRepo = AppDataSource.getRepository(Pitak);
+  async _hydratePitak(pitakId, queryRunner) {
+    const pitakRepo = queryRunner ? queryRunner.manager.getRepository(Pitak) : this.dataSource.getRepository(Pitak);
     const pitak = await pitakRepo.findOne({
       where: { id: pitakId },
-      relations: ["assignments"], // we need assignments for cascade
+      relations: ["assignments"],
     });
     if (!pitak) {
-      logger.error(
-        `[PitakSubscriber] Pitak #${pitakId} not found for hydration`,
-      );
+      logger.error(`[PitakSubscriber] Pitak #${pitakId} not found`);
       return null;
     }
     return pitak;

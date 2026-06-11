@@ -22,7 +22,7 @@ module.exports = async function createAssignment(params, queryRunner) {
       };
     }
 
-    const result = await assignmentService.create(params, "system");
+    const result = await assignmentService.create(params, "system", queryRunner);
     return {
       status: true,
       message: "Assignment created successfully",

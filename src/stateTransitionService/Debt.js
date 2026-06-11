@@ -1,99 +1,71 @@
 // src/stateTransitionServices/DebtStateTransitionService.js
-// @ts-check
 const auditLogger = require("../utils/auditLogger");
 const { logger } = require("../utils/logger");
 const notificationService = require("../services/Notification");
 const emailSender = require("../channels/email.sender");
 const smsSender = require("../channels/sms.sender");
 const { companyName } = require("../utils/settings/system");
-const DebtHistory = require("../entities/DebtHistory");
-const { saveDb } = require("../utils/dbUtils/dbActions"); // ✅ use saveDb
-const { AppDataSource } = require("../main/db/datasource");
+const { saveDb } = require("../utils/dbUtils/dbActions");
 
 class DebtStateTransitionService {
-  // @ts-ignore
   constructor(dataSource) {
     this.dataSource = dataSource;
   }
 
-  /**
-   * Called when a debt is marked as paid.
-   */
-  // @ts-ignore
-  async onPaid(debt, oldDebt, user = "system") {
+  _getRepo(qr, entityClass) {
+    if (qr) return qr.manager.getRepository(entityClass);
+    return this.dataSource.getRepository(entityClass);
+  }
+
+  async onPaid(debt, oldDebt, user = "system", qr = null) {
     logger.info(`[DebtTransition] Debt #${debt.id} paid, old status: ${oldDebt?.status}`);
-
-    // 1. Log to DebtHistory
-    await this._logHistory(debt, oldDebt, "paid", user);
-
-    // 2. Notify worker
-    await this._notifyWorker(debt, "paid");
+    await this._logHistory(debt, oldDebt, "paid", user, qr);
+    await this._notifyWorker(debt, "paid", qr);
   }
 
-  /**
-   * Called when a debt is marked as partially paid.
-   */
-  // @ts-ignore
-  async onPartiallyPaid(debt, oldDebt, user = "system") {
+  async onPartiallyPaid(debt, oldDebt, user = "system", qr = null) {
     logger.info(`[DebtTransition] Debt #${debt.id} partially paid, old status: ${oldDebt?.status}`);
-
-    await this._logHistory(debt, oldDebt, "partially_paid", user);
-    await this._notifyWorker(debt, "partially paid");
+    await this._logHistory(debt, oldDebt, "partially_paid", user, qr);
+    await this._notifyWorker(debt, "partially paid", qr);
   }
 
-  /**
-   * Called when a debt is cancelled.
-   */
-  // @ts-ignore
-  async onCancel(debt, oldDebt, user = "system") {
+  async onCancel(debt, oldDebt, user = "system", qr = null) {
     logger.info(`[DebtTransition] Debt #${debt.id} cancelled, old status: ${oldDebt?.status}`);
-
-    await this._logHistory(debt, oldDebt, "cancelled", user);
-    await this._notifyWorker(debt, "cancelled");
+    await this._logHistory(debt, oldDebt, "cancelled", user, qr);
+    await this._notifyWorker(debt, "cancelled", qr);
   }
 
-  /**
-   * Called when a debt becomes overdue.
-   */
-  // @ts-ignore
-  async onOverdue(debt, oldDebt, user = "system") {
+  async onOverdue(debt, oldDebt, user = "system", qr = null) {
     logger.info(`[DebtTransition] Debt #${debt.id} overdue, old status: ${oldDebt?.status}`);
-
-    await this._logHistory(debt, oldDebt, "overdue", user);
-    await this._notifyWorker(debt, "overdue");
+    await this._logHistory(debt, oldDebt, "overdue", user, qr);
+    await this._notifyWorker(debt, "overdue", qr);
   }
 
-  // --- Private helpers ---
-
-  // @ts-ignore
-  async _logHistory(debt, oldDebt, transactionType, user) {
-    const historyRepo = AppDataSource.getRepository(DebtHistory);
-    const previousBalance = oldDebt?.balance ?? debt.balance; // fallback to current if old not available
+  async _logHistory(debt, oldDebt, transactionType, user, qr) {
+    const DebtHistory = require("../entities/DebtHistory");
+    const historyRepo = this._getRepo(qr, DebtHistory);
+    const previousBalance = oldDebt?.balance ?? debt.balance;
     const newBalance = debt.balance;
 
     const history = historyRepo.create({
-      // @ts-ignore
-      debt: debt,
-      amountPaid: 0, // no monetary change, just status
+      debt,
+      amountPaid: 0,
       previousBalance,
       newBalance,
-      transactionType, // e.g., "paid", "cancelled"
+      transactionType,
       notes: `Status changed from ${oldDebt?.status} to ${debt.status}`,
       performedBy: user,
       referenceNumber: null,
       paymentMethod: null,
+      createdAt: new Date(),
     });
 
-    // @ts-ignore
-    await saveDb(historyRepo, history);
-    // @ts-ignore
+    await saveDb(historyRepo, history, { queryRunner: qr });
     await auditLogger.logCreate("DebtHistory", history.id, history, user);
     logger.info(`[DebtTransition] DebtHistory #${history.id} created for debt #${debt.id}`);
   }
 
-  // @ts-ignore
-  async _notifyWorker(debt, action) {
-    // (same as before – keep existing notification logic)
+  async _notifyWorker(debt, action, qr) {
     const worker = debt.worker;
     if (!worker) {
       logger.warn(`[DebtTransition] No worker for debt #${debt.id} – notification skipped`);
@@ -101,37 +73,27 @@ class DebtStateTransitionService {
     }
 
     const company = await companyName();
-
     const subject = `Debt ${action.charAt(0).toUpperCase() + action.slice(1)} – #${debt.id}`;
-    let textBody = `Dear ${worker.name},\n\n`;
-    textBody += `Your debt #${debt.id} has been marked as ${action}.\n\n`;
-    textBody += `Original Amount: ${debt.originalAmount}\n`;
-    textBody += `Current Balance: ${debt.balance}\n`;
+    let textBody = `Dear ${worker.name},\n\nYour debt #${debt.id} has been marked as ${action}.\n\n`;
+    textBody += `Original Amount: ${debt.originalAmount}\nCurrent Balance: ${debt.balance}\n`;
     if (debt.reason) textBody += `Reason: ${debt.reason}\n`;
     textBody += `\nThank you,\n${company}`;
-
     const htmlBody = textBody.replace(/\n/g, "<br>");
 
     if (worker.email) {
       try {
         await emailSender.send(worker.email, subject, htmlBody, textBody, {}, true);
-        logger.info(`[DebtTransition] ${action} email queued for worker ${worker.email} (debt #${debt.id})`);
       } catch (error) {
-        // @ts-ignore
         logger.error(`[DebtTransition] Failed to queue email for debt #${debt.id}`, error);
       }
     }
-
     if (worker.contact) {
       try {
-        const smsMessage = `Debt #${debt.id} has been ${action}. Check your email for details.`;
-        await smsSender.send(worker.contact, smsMessage);
+        await smsSender.send(worker.contact, `Debt #${debt.id} has been ${action}. Check your email for details.`);
       } catch (error) {
-        // @ts-ignore
         logger.error(`[DebtTransition] SMS failed for worker ${worker.contact}`, error);
       }
     }
-
     try {
       await notificationService.create(
         {
@@ -141,10 +103,10 @@ class DebtStateTransitionService {
           type: action === "cancelled" || action === "overdue" ? "warning" : "info",
           metadata: { debtId: debt.id, status: action },
         },
-        "system"
+        "system",
+        qr
       );
     } catch (err) {
-      // @ts-ignore
       logger.error(`[DebtTransition] Failed to create in-app notification for debt #${debt.id}`, err);
     }
   }

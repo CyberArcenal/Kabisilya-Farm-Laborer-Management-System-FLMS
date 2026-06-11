@@ -11,6 +11,10 @@ module.exports = async function getWorkerById(params) {
     return { status: true, message: "Worker retrieved", data: worker };
   } catch (error) {
     logger.error("IPC: getWorkerById error:", error);
-    return { status: false, message: error.message || "Failed to retrieve worker", data: null };
+    return {
+      status: false,
+      message: error.message || "Failed to retrieve worker",
+      data: null,
+    };
   }
 };

@@ -16,7 +16,7 @@ module.exports = async function deleteAssignment(params, queryRunner) {
       return { status: false, message: "Missing id", data: null };
     }
 
-    const result = await assignmentService.delete(params.id, "system");
+    const result = await assignmentService.delete(params.id, "system", queryRunner);
     return {
       status: true,
       message: "Assignment cancelled successfully",

@@ -45,6 +45,7 @@ const Notification = new EntitySchema({
       createDate: true,
       default: () => "CURRENT_TIMESTAMP",
     },
+    deletedAt: { type: Date, nullable: true },
     updatedAt: {
       type: "datetime",
       updateDate: true,
